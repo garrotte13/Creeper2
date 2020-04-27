@@ -1,0 +1,5 @@
+Version: 1.0.0
+Date: 2020.04.28
+  Features:
+    - Krastorio 2 creep creeps;
+    - Supports Factorio 0.18
