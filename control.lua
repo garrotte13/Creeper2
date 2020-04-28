@@ -1,20 +1,10 @@
---[[--
-IDEAS:
-  - remote.call to print stats to console
-  - setting for creep per spawn
-  - setting for how much evolution per "new" creep (pollution_factor slider)
-  - need to capture current pollution factor, and divine if it's been
-    changed by someone other than me. and update the baseline so removal
-    of creep does not go below the factor (i.e., the creep around the
-    starter spawners are not counted)
-  - requeue if at least one creep was spawned and there
-    is left over creep
---]]--
-
-
 local DEVELOP = false
-local CREEP_PER_SPAWN = 3
-local NTH_TICKS = 13
+
+-- This isn't pollution per se, but it's an easy way to think of
+-- it during the calculations.
+local CREEP_POLLUTION_PER_TICK = 0.0001 / 3600
+local CREEP_TICKS = 13
+local EVO_TICKS = 60
 local POLLUTION_POWER = 1.2
 local THETA_OFFSET = math.pi / 4
 local TILES_PER_INTERVAL = 16
@@ -36,27 +26,102 @@ function table.copy (tbl)
 end
 
 
-script.on_init (function ()
+function reset_globals()
     global.creep_state = {}
+    global.evolution_factor_by_creep = 0
+    global.spawned_creep = 0
     global.work_index = nil
-end)
+end
 
+
+script.on_init (reset_globals)
 
 script.on_event (defines.events.on_tick, function(event)
     -- Useful for development to reset state.
     if DEVELOP then
         -- Indexed by spawner as each has it's own direction
         -- and creep count to track.
-        global.creep_state = {}
-        global.work_index = nil
+        reset_globals()
     end
 
     -- And then disable the event callback.
     script.on_event (defines.events.on_tick, nil)
 end)
 
+script.on_nth_tick (EVO_TICKS, function (event)
+    local cef = settings.global["creep-evolution-factor"].value
+    if cef > 0 then
+        -- This applies evolution to all forces, even though the lore
+        -- of the creep is that it's spawner controlled, which implies
+        -- specific forces and whatnot. But since the creep is just a
+        -- tile and not associated w/ any spawner in specific, we'll
+        -- just wing it for simplicity.
 
-script.on_nth_tick (NTH_TICKS, function (event)
+        -- How much psuedo-pollution generated per tick based on how
+        -- many creep is dotting the landscape.
+        local pollution = CREEP_POLLUTION_PER_TICK * global.spawned_creep
+
+        -- And then account for how many ticks elapsed since last calc.
+        pollution = pollution * EVO_TICKS
+
+        -- Before applied to the base of 1 - evo.
+        local evo_c_previous = global.evolution_factor_by_creep
+
+        -- Based on the creep evolution factor setting (scaled down from
+        -- human form), calculate how much evolution factor from creep.
+        local evo_c_delta = cef / 100000 * pollution
+
+        -- It's applied against all forces, but we only want to account
+        -- for it the one time for our stats.
+        local accounted_for_evo_by_creep = false
+
+        for _, f in pairs (game.forces) do
+            if f and f.valid then
+                local evo = f.evolution_factor
+                local evo_c = (1 - evo) * evo_c_delta
+
+                evo = evo + evo_c
+
+                if not accounted_for_evo_by_creep then
+                    accounted_for_evo_by_creep = true
+
+                    global.evolution_factor_by_creep = evo_c_previous + evo_c
+
+                    print (string.format (
+                            "EVO: creep %d  evo_c %0.08f   evo_p %0.08f",
+                            global.spawned_creep,
+                            global.evolution_factor_by_creep,
+                            f.evolution_factor_by_pollution
+                    ))
+                end
+
+                f.evolution_factor = evo
+            end
+        end
+    end
+end)
+
+
+function on_remove_tile (event)
+    local creep_removed = 0
+
+    for _, tile in pairs (event.tiles) do
+        if tile.old_tile.name == "kr-creep" then
+            creep_removed = creep_removed + 1
+        end
+    end
+
+    -- Clamp it to zero as we only count creep that has crept, not
+    -- the creep that has spawned around the spawners.
+    global.spawned_creep = math.max (0, global.spawned_creep - creep_removed)
+end
+
+
+script.on_event (defines.events.on_player_mined_tile, on_remove_tile)
+script.on_event (defines.events.on_robot_mined_tile, on_remove_tile)
+
+
+script.on_nth_tick (CREEP_TICKS, function (event)
     --[[--
     States are:
       - wait - batching unit spawns
@@ -87,12 +152,27 @@ script.on_nth_tick (NTH_TICKS, function (event)
 
         elseif creep.state == "spawn" then
             -- Search out local tiles to drop a creep.
+            local creeps
             if creep.spawn_position then
-                spawn_creep (creep.surface, creep.spawn_position, creep.creep_count)
+                creeps = spawn_creep (
+                        creep.surface,
+                        creep.spawn_position,
+                        creep.creep_count
+                )
             end
 
-            -- Done with this one.
-            fini = true
+            if creeps and creep.surface.valid then
+                -- Let someone else do some work.
+                global.work_index = nil
+
+                -- This is just like `on_entity_spawned`.
+                creep.state = "wait"
+                creep.creep_count = creeps
+                creep.search_tick = event.tick + UNIT_WAIT_TICKS
+            else
+                -- Done with this one.
+                fini = true
+            end
 
         else
             -- This is wrong. Just delete it and move on with your life.
@@ -140,7 +220,9 @@ script.on_event (defines.events.on_entity_spawned, function (event)
     -- In all states, when a unit spawns, the creep count can increase.
     creep.surface = spawner.surface
     creep.position = spawner.position
-    creep.creep_count = creep.creep_count + CREEP_PER_SPAWN
+
+    local spawn = math.random (1, settings.global["creep-growth"].value)
+    creep.creep_count = creep.creep_count + spawn
     if not creep.search_tick then
         creep.search_tick = event.tick + UNIT_WAIT_TICKS
     end
@@ -312,11 +394,20 @@ function spawn_creep (surface, position, creeps)
     find_free_tiles (position)
 
     local creep_tiles = {}
+    local spawned = 0
     for _, tile in pairs (tiles) do
         table.insert (creep_tiles, tile)
+        spawned = spawned + 1
     end
 
     surface.set_tiles (creep_tiles)
+    global.spawned_creep = global.spawned_creep + spawned
+
+    -- If we were able to find space for some, then requeue the leftovers
+    -- so it tries again.
+    if spawned > 0 and creeps > 0 then
+        return creeps
+    end
 end
 
 
