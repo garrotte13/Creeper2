@@ -27,6 +27,8 @@ end
 
 
 function reset_globals()
+    -- Indexed by spawner as each has it's own direction
+    -- and creep count to track.
     global.creep_state = {}
     global.evolution_factor_by_creep = 0
     global.spawned_creep = 0
@@ -39,14 +41,51 @@ script.on_init (reset_globals)
 script.on_event (defines.events.on_tick, function(event)
     -- Useful for development to reset state.
     if DEVELOP then
-        -- Indexed by spawner as each has it's own direction
-        -- and creep count to track.
         reset_globals()
     end
+
+    commands.add_command (
+        "creepolution",
+        "Display evolution accounting for creep.",
+        creepolution
+    )
 
     -- And then disable the event callback.
     script.on_event (defines.events.on_tick, nil)
 end)
+
+
+function creepolution (args)
+    local player = game.get_player (args.player_index)
+    local f = game.forces.enemy
+    if player and f then
+        local evo = f.evolution_factor
+        local evo_t = f.evolution_factor_by_time
+        local evo_p = f.evolution_factor_by_pollution
+        local evo_s = f.evolution_factor_by_killing_spawners
+        local evo_c = global.evolution_factor_by_creep or 0
+
+        local evo_parts = evo_t + evo_p + evo_s + evo_c
+
+        player.print (string.format (
+                "Evolution factor: %0.04f. (Time %d%%) "
+                        .. "(Pollution %d%%) (Spawner kills %d%%) "
+                        .. "(Creep %d%%) ",
+                evo,
+                evo_t * 100 / evo_parts,
+                evo_p * 100 / evo_parts,
+                evo_s * 100 / evo_parts,
+                evo_c * 100 / evo_parts
+        ))
+
+        player.print (string.format (
+                "Creepolution factor: %0.08f (creep %d)",
+                evo_c,
+                global.spawned_creep or 0
+        ))
+    end
+end
+
 
 script.on_nth_tick (EVO_TICKS, function (event)
     local cef = settings.global["creep-evolution-factor"].value
@@ -57,6 +96,8 @@ script.on_nth_tick (EVO_TICKS, function (event)
         -- tile and not associated w/ any spawner in specific, we'll
         -- just wing it for simplicity.
 
+        local evo_c_previous = global.evolution_factor_by_creep
+
         -- How much psuedo-pollution generated per tick based on how
         -- many creep is dotting the landscape.
         local pollution = CREEP_POLLUTION_PER_TICK * global.spawned_creep
@@ -64,39 +105,21 @@ script.on_nth_tick (EVO_TICKS, function (event)
         -- And then account for how many ticks elapsed since last calc.
         pollution = pollution * EVO_TICKS
 
-        -- Before applied to the base of 1 - evo.
-        local evo_c_previous = global.evolution_factor_by_creep
-
         -- Based on the creep evolution factor setting (scaled down from
         -- human form), calculate how much evolution factor from creep.
-        local evo_c_delta = cef / 100000 * pollution
+        -- Before applied to the base of 1 - evo.
+        local evo_c_pollution = cef / 100000 * pollution
 
-        -- It's applied against all forces, but we only want to account
-        -- for it the one time for our stats.
-        local accounted_for_evo_by_creep = false
+        -- Only updating the enemy as they are the ones with creep.
+        local f = game.forces.enemy
+        if f and f.valid then
+            local evo = f.evolution_factor
+            local evo_c_delta = (1 - evo) * evo_c_pollution
 
-        for _, f in pairs (game.forces) do
-            if f and f.valid then
-                local evo = f.evolution_factor
-                local evo_c = (1 - evo) * evo_c_delta
+            f.evolution_factor = evo + evo_c_delta
 
-                evo = evo + evo_c
-
-                if not accounted_for_evo_by_creep then
-                    accounted_for_evo_by_creep = true
-
-                    global.evolution_factor_by_creep = evo_c_previous + evo_c
-
-                    print (string.format (
-                            "EVO: creep %d  evo_c %0.08f   evo_p %0.08f",
-                            global.spawned_creep,
-                            global.evolution_factor_by_creep,
-                            f.evolution_factor_by_pollution
-                    ))
-                end
-
-                f.evolution_factor = evo
-            end
+            local evo_c = evo_c_previous + evo_c_delta
+            global.evolution_factor_by_creep = evo_c
         end
     end
 end)
@@ -141,6 +164,7 @@ script.on_nth_tick (CREEP_TICKS, function (event)
             fini = true
 
         elseif creep.state == "search" then
+            -- Find a spot to begin searching for free creep spots.
             creep_iterative_search (creep)
 
             if creep.spawn_position then
@@ -361,6 +385,10 @@ function spawn_creep (surface, position, creeps)
     local tiles = {}
 
     local function find_free_tiles (find_pos)
+        -- Used to track if we've found at least one drop-off
+        -- in a full cycle. If we haven't, we abort wholesale
+        -- because we may have wandered into the middle of an
+        -- area that just wastes time finding nothing.
         local found_tile = true
 
         while creeps > 0 and found_tile do
@@ -483,7 +511,7 @@ function weighted_random_pollution (chunks)
 
     local function scaling (what)
         -- Moar weight!
-        return math.pow (what, POLLUTION_POWER) + fudge
+        return math.pow (what+1, POLLUTION_POWER) + fudge
     end
 
     local factor = 0
