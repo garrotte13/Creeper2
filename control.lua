@@ -1,10 +1,14 @@
+local modname = "creeper"
+
 local DEVELOP = false
 
 -- This isn't pollution per se, but it's an easy way to think of
 -- it during the calculations.
 local CREEP_POLLUTION_PER_TICK = 0.0001 / 3600
 local CREEP_TICKS = 13
-local EVO_TICKS = 60
+local DEFERRED_PER_INTERVAL = 3
+local DEFERRED_TICKS = 17
+local EVO_TICKS = 61
 local POLLUTION_POWER = 1.2
 local THETA_OFFSET = math.pi / 4
 local TILES_PER_INTERVAL = 16
@@ -26,122 +30,59 @@ function table.copy (tbl)
 end
 
 
-function reset_globals()
+function first_time()
+    -- Register our command.
+    commands.add_command (
+        "creepolution",
+        "Display evolution accounting for creep.",
+        command_creepolution
+    )
+
     -- Indexed by spawner as each has it's own direction
     -- and creep count to track.
     global.creep_state = {}
     global.evolution_factor_by_creep = 0
-    global.spawned_creep = 0
     global.work_index = nil
+
+    -- We lazily track the chunks with pollution, using events
+    -- to guess if we should turn our Sauron gaze upon them.
+    -- For instance, when units are built, their position is
+    -- a mostly accurate guess for the chunk that has a spawner.
+    -- And spawner locations, since they spawn creep, are good
+    -- places to check for pollution.
+    global.deferred_chunks = {}
+    global.evolution_chunks = {}
+
+    -- Walk all the surfaces and their chunks to figure out if
+    -- there's stuff we should be monitoring now.
+    for _, surface in pairs (game.surfaces) do
+        if surface and surface.valid then
+            -- Bind locally.
+            local surface_is_chunk_generated = surface.is_chunk_generated
+            local surface_get_pollution = surface.get_pollution
+
+            for chunk in surface.get_chunks() do
+                if surface_is_chunk_generated (chunk) then
+                    -- We have chunks, but `get_pollution` is by position.
+                    local pollution = surface_get_pollution (chunk.area.left_top)
+                    if pollution > 0 then
+                        defer_chunk {surface, chunk_position=chunk}
+                    end
+                end
+            end
+        end
+    end
 end
 
 
-script.on_init (reset_globals)
-
-script.on_event (defines.events.on_tick, function(event)
-    -- Useful for development to reset state.
-    if DEVELOP then
-        reset_globals()
-    end
-
+script.on_init (first_time)
+script.on_load (function()
     commands.add_command (
         "creepolution",
         "Display evolution accounting for creep.",
-        creepolution
+        command_creepolution
     )
-
-    -- And then disable the event callback.
-    script.on_event (defines.events.on_tick, nil)
 end)
-
-
-function creepolution (args)
-    local player = game.get_player (args.player_index)
-    local f = game.forces.enemy
-    if player and f then
-        local evo = f.evolution_factor
-        local evo_t = f.evolution_factor_by_time
-        local evo_p = f.evolution_factor_by_pollution
-        local evo_s = f.evolution_factor_by_killing_spawners
-        local evo_c = global.evolution_factor_by_creep or 0
-
-        local evo_parts = evo_t + evo_p + evo_s + evo_c
-
-        player.print (string.format (
-                "Evolution factor: %0.04f. (Time %d%%) "
-                        .. "(Pollution %d%%) (Spawner kills %d%%) "
-                        .. "(Creep %d%%) ",
-                evo,
-                evo_t * 100 / evo_parts,
-                evo_p * 100 / evo_parts,
-                evo_s * 100 / evo_parts,
-                evo_c * 100 / evo_parts
-        ))
-
-        player.print (string.format (
-                "Creepolution factor: %0.08f (creep %d)",
-                evo_c,
-                global.spawned_creep or 0
-        ))
-    end
-end
-
-
-script.on_nth_tick (EVO_TICKS, function (event)
-    local cef = settings.global["creep-evolution-factor"].value
-    if cef > 0 then
-        -- This applies evolution to all forces, even though the lore
-        -- of the creep is that it's spawner controlled, which implies
-        -- specific forces and whatnot. But since the creep is just a
-        -- tile and not associated w/ any spawner in specific, we'll
-        -- just wing it for simplicity.
-
-        local evo_c_previous = global.evolution_factor_by_creep
-
-        -- How much psuedo-pollution generated per tick based on how
-        -- many creep is dotting the landscape.
-        local pollution = CREEP_POLLUTION_PER_TICK * global.spawned_creep
-
-        -- And then account for how many ticks elapsed since last calc.
-        pollution = pollution * EVO_TICKS
-
-        -- Based on the creep evolution factor setting (scaled down from
-        -- human form), calculate how much evolution factor from creep.
-        -- Before applied to the base of 1 - evo.
-        local evo_c_pollution = cef / 100000 * pollution
-
-        -- Only updating the enemy as they are the ones with creep.
-        local f = game.forces.enemy
-        if f and f.valid then
-            local evo = f.evolution_factor
-            local evo_c_delta = (1 - evo) * evo_c_pollution
-
-            f.evolution_factor = evo + evo_c_delta
-
-            local evo_c = evo_c_previous + evo_c_delta
-            global.evolution_factor_by_creep = evo_c
-        end
-    end
-end)
-
-
-function on_remove_tile (event)
-    local creep_removed = 0
-
-    for _, tile in pairs (event.tiles) do
-        if tile.old_tile.name == "kr-creep" then
-            creep_removed = creep_removed + 1
-        end
-    end
-
-    -- Clamp it to zero as we only count creep that has crept, not
-    -- the creep that has spawned around the spawners.
-    global.spawned_creep = math.max (0, global.spawned_creep - creep_removed)
-end
-
-
-script.on_event (defines.events.on_player_mined_tile, on_remove_tile)
-script.on_event (defines.events.on_robot_mined_tile, on_remove_tile)
 
 
 script.on_nth_tick (CREEP_TICKS, function (event)
@@ -151,8 +92,8 @@ script.on_nth_tick (CREEP_TICKS, function (event)
       - search - walking the creep looking for drop-off point (TILES_PER_TICK)
       - spawn - drop-off point located, spawn all neighbor creeps
     --]]--
-    local creep
 
+    local creep
     if global.work_index then
         creep = global.creep_state[global.work_index]
     end
@@ -211,9 +152,13 @@ script.on_nth_tick (CREEP_TICKS, function (event)
     else
         -- There isn't an active search/spawn going so check the
         -- spawners to see if any are primed to creep.
-        for index, state in pairs (global.creep_state) do
+
+        -- Bind locally.
+        local global_creep_state = global.creep_state
+
+        for index, state in pairs (global_creep_state) do
             if not state.surface.valid then
-                global.creep_state[index] = nil
+                global_creep_state[index] = nil
 
             elseif state.state == "wait" then
                 if state.search_tick and event.tick >= state.search_tick then
@@ -223,6 +168,8 @@ script.on_nth_tick (CREEP_TICKS, function (event)
 
                         -- Only process one at a time.
                         break
+                    else
+                        global_creep_state[index] = nil
                     end
                 end
             end
@@ -231,34 +178,281 @@ script.on_nth_tick (CREEP_TICKS, function (event)
 end)
 
 
-script.on_event (defines.events.on_entity_spawned, function (event)
-    local spawner = event.spawner
-    local unit_number = spawner.unit_number
+script.on_nth_tick (DEFERRED_TICKS, function (event)
+    if not global.deferred_chunks then return end
 
-    if not global.creep_state[unit_number] then
-        init_creep_state (unit_number)
-    end
+    -- The big hit in time is counting tiles. That's what
+    -- will be counted as "processed" in Camp Four.
+    local deferred_processed = 0
+    for key, chunk in pairs (global.deferred_chunks) do
+        local surface = game.surfaces[chunk.surface_index]
+        local position = chunk.chunk_position.area.left_top
 
-    local creep = global.creep_state[unit_number]
+        if surface and surface.valid then
+            local pollution = surface.get_pollution (position)
+            if pollution > 0 then
+                -- We need to interrogate this chunk and add it to
+                -- the list of chunks to be monitored.
+                local creep = surface.count_tiles_filtered {
+                    name="kr-creep",
+                    area=chunk.chunk_position.area
+                }
 
-    -- In all states, when a unit spawns, the creep count can increase.
-    creep.surface = spawner.surface
-    creep.position = spawner.position
+                if creep > 0 then
+                    global.evolution_chunks[key] = {
+                        chunk = chunk,
+                        creep = creep
+                    }
+                end
 
-    local spawn = math.random (1, settings.global["creep-growth"].value)
-    creep.creep_count = creep.creep_count + spawn
-    if not creep.search_tick then
-        creep.search_tick = event.tick + UNIT_WAIT_TICKS
+                deferred_processed = deferred_processed + 1
+            end
+        end
+
+        -- It's either been elevated or isn't worth looking at.
+        global.deferred_chunks[key] = nil
+
+        if deferred_processed >= DEFERRED_PER_INTERVAL then
+            break
+        end
     end
 end)
 
 
-function filter_tile (tile)
-    if not tile then return nil end
-    if not tile.valid then return nil end
-    if tile.collides_with ("player-layer") then return nil end
+script.on_nth_tick (EVO_TICKS, function (event)
+    if not game.map_settings.pollution.enabled then
+        -- Respect the difficulty settings. If pollution isn't
+        -- enabled, it won't modify the evolution from it.
+        global.evolution_chunks = {}
+        return
+    end
 
-    return tile
+    local sg = settings.global
+    local cef = sg["creep-evolution-factor"].value
+    local is_bonus_checked = sg["creep-evolution-pollution-bonus"].value
+
+    if cef > 0 then
+        -- This applies evolution to enemy forces, even though the lore
+        -- of the creep is that it's spawner controlled, which implies
+        -- specific forces and whatnot. But since the creep is just a
+        -- tile and not associated w/ any spawner in specific, we'll
+        -- just wing it for simplicity.
+
+        local evo_c_previous = global.evolution_factor_by_creep or 0
+
+        -- Bind locally.
+        local evolution_chunks = global.evolution_chunks
+        local math_max = math.max
+        local math_log10 = math.log10
+
+        -- How much psuedo-pollution generated per tick based on how
+        -- many creep is dotting the landscape.
+        local creep_in_pollution = 0
+        for key, chunk in pairs (evolution_chunks) do
+            local surface = game.surfaces[chunk.chunk.surface_index]
+            if surface and surface.valid then
+                -- Once it makes it into this list, there were creep.
+                -- Creep won't change (unlike pollution) unless it goes
+                -- back through the deferral list.
+                local position = chunk.chunk.chunk_position.area.left_top
+                local pollution = surface.get_pollution (position)
+                if pollution > 0 then
+                    local bonus_coefficient = 1
+
+                    -- If the user wants this, evolution factor will
+                    -- be higher for creep in higher pollution. This is
+                    -- accomplished by creating a faux count of creeps.
+                    if is_bonus_checked then
+                        bonus_coefficient = math_max (1, math_log10 (pollution))
+                    end
+
+                    creep_in_pollution = creep_in_pollution
+                            + (chunk.creep * bonus_coefficient)
+                else
+                    -- No need to monitor this anymore. Now, pollution
+                    -- may float back into this chunk w/ creep, but
+                    -- it will no longer be accounted until an event
+                    -- happens within that chunk.
+                    evolution_chunks[key] = nil
+                end
+            else
+                evolution_chunks[key] = nil
+            end
+        end
+
+        -- Approximation since we are not accurately tracking
+        -- when we first observed creepiness.
+        local pollution = CREEP_POLLUTION_PER_TICK * creep_in_pollution
+
+        -- And then account for how many ticks elapsed since last calc.
+        pollution = pollution * EVO_TICKS
+
+        -- Based on the creep evolution factor setting (scaled down from
+        -- human form), calculate how much evolution factor from creep.
+        -- Before applied to the base of 1 - evo.
+        local evo_c_pollution = cef / 100000 * pollution
+
+        -- Only updating the enemy as they are the ones with creep.
+        local f = game.forces.enemy
+        if f and f.valid then
+            local evo = f.evolution_factor or 0
+            local evo_c_delta = (1 - evo) * evo_c_pollution
+
+            f.evolution_factor = evo + evo_c_delta
+
+            local evo_c = evo_c_previous + evo_c_delta
+            global.evolution_factor_by_creep = evo_c
+        end
+    end
+end)
+
+
+script.on_event (defines.events.on_biter_base_built, function (event)
+    -- The only purpose for processing this event is to add a little
+    -- variation to the perfect ellipses that Krastorio creates.
+    local entity = event.entity
+    if entity and entity.valid and entity.type == "unit_spawner" then
+        spawner_event (event.tick, entity)
+    end
+end)
+
+
+script.on_event (defines.events.on_entity_died, function (event)
+    local entity = event.entity
+    if entity and entity.valid then
+        -- For evolution calculation.
+        defer_chunk {entity.surface, entity.position}
+    end
+end, {{ filter = "type", type = "unit-spawner" }})
+
+
+script.on_event (defines.events.on_entity_spawned, function (event)
+    local spawner = event.entity
+    if spawner and spawner.valid then
+        spawner_event (event.tick, spawner)
+    end
+end)
+
+
+function on_remove_tile (event)
+    local surface = game.surfaces[event.surface_index]
+    for _, tile in pairs (event.tiles) do
+        if tile.old_tile.name == "kr-creep" then
+            -- For evolution calculation.
+            defer_chunk {surface, tile.position}
+        end
+    end
+end
+
+
+script.on_event (defines.events.on_player_mined_tile, on_remove_tile)
+script.on_event (defines.events.on_robot_mined_tile, on_remove_tile)
+
+
+script.on_event (defines.events.on_player_selected_area, function (event)
+    if event.item == "kr-creep-collector" then
+        -- The collector may be too far or have no creep, but that's
+        -- okay. Once the deferred area is processed, it'll be resolved.
+        local surface = event.surface
+        if surface and surface.valid then
+            local chunk_left_top = {
+                x = math.floor (event.area.left_top.x / 32),
+                y = math.floor (event.area.left_top.y / 32)
+            }
+            local chunk_right_bottom = {
+                x = math.floor (event.area.right_bottom.x / 32),
+                y = math.floor (event.area.right_bottom.y / 32)
+            }
+            for x = chunk_left_top.x, chunk_right_bottom.x do
+                for y = chunk_left_top.y, chunk_right_bottom.y do
+                    defer_chunk {surface, chunk_position={ x = x, y = y }}
+                end
+            end
+        end
+    end
+end)
+
+
+function chunk_key (params)
+    local surface_index
+    local pos_x, pos_y
+
+    if params.chunk then
+        surface_index = params.chunk.surface_index
+        pos_x = params.chunk.chunk_position.x
+        pos_y = params.chunk.chunk_position.y
+    elseif params.entity then
+        surface_index = params.entity.surface.index
+        pos_x = math.floor (params.entity.position.x / 32)
+        pos_y = math.floor (params.entity.position.y / 32)
+    else
+        print (modname, "chunk_key: invalid params", serpent.line (params))
+        __crash()
+    end
+
+    return table.concat ({ surface_index, ":", pos_x, ":", pos_y })
+end
+
+
+function command_creepolution (args)
+    local player = game.get_player (args.player_index)
+    local f = game.forces.enemy
+    if player and f then
+        local evo = f.evolution_factor or 0
+        local evo_t = f.evolution_factor_by_time or 0
+        local evo_p = f.evolution_factor_by_pollution or 0
+        local evo_s = f.evolution_factor_by_killing_spawners or 0
+        local evo_c = global.evolution_factor_by_creep or 0
+
+        -- Prevent divide-by-zero (w/ episilon)
+        local evo_parts = evo_t + evo_p + evo_s + evo_c
+        if evo_parts <= 0.00001 then
+            evo_parts = 1
+        end
+
+        player.print (string.format (
+                "Evolution factor: %0.04f. (Time %d%%) "
+                        .. "(Pollution %d%%) (Spawner kills %d%%) "
+                        .. "(Creep %d%%) ",
+                evo,
+                evo_t * 100 / evo_parts,
+                evo_p * 100 / evo_parts,
+                evo_s * 100 / evo_parts,
+                evo_c * 100 / evo_parts
+        ))
+
+        local creep_in_pollution = 0
+        for _, chunk in pairs (global.evolution_chunks) do
+            creep_in_pollution = creep_in_pollution + chunk.creep
+        end
+
+        player.print (string.format (
+                "Creepolution factor: %0.08f (polluted creep %d)",
+                evo_c,
+                creep_in_pollution
+        ))
+
+        -- And debug stats to the log.
+        local evo_string
+        if game.map_settings.pollution.enabled then
+            evo_string = string.format ("%0.08f", evo_c)
+        else
+            evo_string = "disabled"
+        end
+
+        print (string.format ("%d %s: monitored chunks=%d, "
+                .. "deferred chunks=%d, evolution factor=%s, "
+                .. "creep=%d, work items=%d, work index=%d",
+                args.tick,
+                modname,
+                table_size (global.evolution_chunks or {}),
+                table_size (global.deferred_chunks or {}),
+                evo_string,
+                creep_in_pollution,
+                table_size (global.creep_state or {}),
+                global.work_index or 0
+        ))
+    end
 end
 
 
@@ -309,15 +503,13 @@ end
 function creep_search_position (surface, position)
     if not surface.valid then return nil end
 
-    -- local creeps = surface.get_connected_tiles (position, { "kr-creep" })
-    local creeps = surface.find_tiles_filtered{
+    local creeps = surface.find_tiles_filtered {
         position = position,
         radius = 16,
         name = "kr-creep",
     }
     local creeps_len = table_size (creeps)
 
-    -- Weird.
     if creeps_len == 0 then
         return nil
     end
@@ -326,7 +518,7 @@ function creep_search_position (surface, position)
     local search_position
     local rnd = math.random (1, creeps_len)
     for i=rnd, rnd + creeps_len do
-        local tile = filter_tile (creeps[i])
+        local tile = filter_tile (creeps[i % rnd + 1])
         if tile then
             search_position = tile.position
             break
@@ -335,6 +527,62 @@ function creep_search_position (surface, position)
     end
 
     return search_position
+end
+
+
+function defer_chunk (params)
+    setmetatable (params, { __index={ chunk_position=nil }})
+    local surface = params[1] or params.surface
+    local position = params[2] or params.position
+    local chunk_position = params[3] or params.chunk_position
+
+    if not (surface and surface.valid) then return end
+    if not (position or chunk_position) then
+        print (modname, "defer_chunk: bad params", serpent.line (params))
+        __crash()
+    end
+
+    if position then
+        chunk_position = {
+            x = math.floor(position.x / 32),
+            y = math.floor(position.y / 32)
+        }
+    end
+
+    local left_top = {
+        x = chunk_position.x * 32,
+        y = chunk_position.y * 32
+    }
+
+    local right_bottom = {
+        x = left_top.x + 32,
+        y = left_top.y + 32
+    }
+
+    local area = {
+        left_top = left_top,
+        right_bottom = right_bottom
+    }
+
+    local chunk = {
+        surface_index = surface.index,
+        chunk_position = {
+            x = chunk_position.x,
+            y = chunk_position.y,
+            area = area
+        }
+    }
+
+    global.deferred_chunks[chunk_key {chunk=chunk}] = chunk
+end
+
+
+function filter_tile (tile)
+    if not tile then return nil end
+    if not tile.valid then return nil end
+    if tile.collides_with ("player-layer") then return nil end
+
+    return tile
 end
 
 
@@ -384,6 +632,9 @@ function spawn_creep (surface, position, creeps)
     }
     local tiles = {}
 
+    -- Bind locally.
+    local surface_get_tile = surface.get_tile
+
     local function find_free_tiles (find_pos)
         -- Used to track if we've found at least one drop-off
         -- in a full cycle. If we haven't, we abort wholesale
@@ -391,17 +642,21 @@ function spawn_creep (surface, position, creeps)
         -- area that just wastes time finding nothing.
         local found_tile = true
 
+        -- Bind locally.
+        local math_random = math.random
+        local table_concat = table.concat
+
         while creeps > 0 and found_tile do
             found_tile = false
 
-            local dir = math.random (1, 9)
+            local dir = math_random (1, 9)
             for i = dir, dir+9 do
                 local off = offsets[i % 9 + 1]
                 local pos = { x = find_pos.x + off[1], y = find_pos.y + off[2] }
 
-                local pt_key = table.concat ({pos.x, ":", pos.y})
+                local pt_key = table_concat ({pos.x, ":", pos.y})
                 if not tiles[pt_key] then
-                    local tile = filter_tile (surface.get_tile (pos))
+                    local tile = filter_tile (surface_get_tile (pos))
                     if tile and tile.name ~= "kr-creep" then
                         tiles[pt_key] = {
                             name = "kr-creep",
@@ -424,12 +679,14 @@ function spawn_creep (surface, position, creeps)
     local creep_tiles = {}
     local spawned = 0
     for _, tile in pairs (tiles) do
+        -- For evolution calculation.
+        defer_chunk {surface, tile.position}
+
         table.insert (creep_tiles, tile)
         spawned = spawned + 1
     end
 
     surface.set_tiles (creep_tiles)
-    global.spawned_creep = global.spawned_creep + spawned
 
     -- If we were able to find space for some, then requeue the leftovers
     -- so it tries again.
@@ -439,67 +696,99 @@ function spawn_creep (surface, position, creeps)
 end
 
 
+function spawner_event (tick, spawner)
+    -- REQUIRES: valid spawner
+    local unit_number = spawner.unit_number
+
+    if not global.creep_state[unit_number] then
+        init_creep_state (unit_number)
+    end
+
+    local creep = global.creep_state[unit_number]
+
+    -- In all states, when a unit spawns, the creep count can increase.
+    creep.surface = spawner.surface
+    creep.position = spawner.position
+
+    local spawn = math.random (1, settings.global["creep-growth"].value)
+    creep.creep_count = creep.creep_count + spawn
+    if not creep.search_tick then
+        creep.search_tick = tick + UNIT_WAIT_TICKS
+    end
+
+    -- For evolution calculation. Even though when we get to spawn
+    -- the creep, we also `defer_chunks`, we do it here in case
+    -- the creep patch spans boundaries from where this spawner is.
+    defer_chunk {spawner.surface, spawner.position}
+
+end
+
+
 function surrounding_chunk_pollutions (surface, position)
     -- REQUIRES: valid surface
 
     local chunks = {}
     local p = table.copy (position)
 
+    -- Bind locally.
+    local math_pi = math.pi
+    local surface_get_pollution = surface.get_pollution
+
     -- defines.direction.northwest
     p.x = p.x - 32
     p.y = p.y - 32
     chunks[1] = {
-        pollution = surface.get_pollution (p),
-        theta=3 * math.pi / 4
+        pollution = surface_get_pollution (p),
+        theta=3 * math_pi / 4
     }
 
     -- defines.direction.north
     p.x = p.x + 32
     chunks[2] = {
-        pollution = surface.get_pollution (p),
-        theta = math.pi / 2
+        pollution = surface_get_pollution (p),
+        theta = math_pi / 2
     }
 
     -- defines.direction.northeast
     p.x = p.x + 32
     chunks[3] = {
-        pollution = surface.get_pollution (p),
-        theta = math.pi / 4
+        pollution = surface_get_pollution (p),
+        theta = math_pi / 4
     }
 
     -- defines.direction.east
     p.y = p.y + 32
     chunks[4] = {
-        pollution = surface.get_pollution (p),
+        pollution = surface_get_pollution (p),
         theta = 0
     }
 
     -- defines.direction.west
     p.x = p.x - (32 * 2)  -- skipping over this "position" chunk
     chunks[5] = {
-        pollution = surface.get_pollution (p),
-        theta = math.pi
+        pollution = surface_get_pollution (p),
+        theta = math_pi
     }
 
     -- defines.direction.southwest
     p.y = p.y - 32
     chunks[6] = {
-        pollution = surface.get_pollution (p),
-        theta = 5 * math.pi / 4
+        pollution = surface_get_pollution (p),
+        theta = 5 * math_pi / 4
     }
 
     -- defines.direction.south
     p.x = p.x + 32
     chunks[7] = {
-        pollution = surface.get_pollution (p),
-        theta = 3 * math.pi / 2
+        pollution = surface_get_pollution (p),
+        theta = 3 * math_pi / 2
     }
 
     -- defines.direction.southeast
     p.x = p.x + 32
     chunks[8] = {
-        pollution=surface.get_pollution (p),
-        theta = 7 * math.pi / 4
+        pollution=surface_get_pollution (p),
+        theta = 7 * math_pi / 4
     }
 
     return chunks
@@ -509,9 +798,12 @@ end
 function weighted_random_pollution (chunks)
     local fudge = table_size (chunks) / 1.0
 
+    -- Bind locally.
+    local math_pow = math.pow
+
     local function scaling (what)
         -- Moar weight!
-        return math.pow (what+1, POLLUTION_POWER) + fudge
+        return math_pow (what+1, POLLUTION_POWER) + fudge
     end
 
     local factor = 0
