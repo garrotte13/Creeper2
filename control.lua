@@ -2,32 +2,21 @@ local modname = "creeper"
 
 local DEVELOP = false
 
+local util = require "util"
+local table_deepcopy = util.table.deepcopy
+
 -- This isn't pollution per se, but it's an easy way to think of
 -- it during the calculations.
 local CREEP_POLLUTION_PER_TICK = 0.0001 / 3600
+local CREEP_SEARCH_RADIUS = 12
 local CREEP_TICKS = 13
 local DEFERRED_PER_INTERVAL = 3
 local DEFERRED_TICKS = 17
-local EVO_TICKS = 61
+local EVO_TICKS = 67
 local POLLUTION_POWER = 1.2
 local THETA_OFFSET = math.pi / 4
 local TILES_PER_INTERVAL = 16
 local UNIT_WAIT_TICKS = 60 * 3
-
-
-function table.copy (tbl)
-    local tbl_type = type (tbl)
-    local copy
-    if tbl_type == 'table' then
-        copy = {}
-        for key, value in pairs (tbl) do
-            copy[key] = value
-        end
-    else
-        copy = tbl
-    end
-    return copy
-end
 
 
 function first_time()
@@ -37,6 +26,9 @@ function first_time()
         "Display evolution accounting for creep.",
         command_creepolution
     )
+
+    -- The Krastorio virus has been released on this surface.
+    global.surface_viruses = {}
 
     -- Indexed by spawner as each has it's own direction
     -- and creep count to track.
@@ -75,7 +67,32 @@ function first_time()
 end
 
 
+-- Not called on new game.
+-- Called when added to existing game.
+script.on_configuration_changed (function (config)
+    local creeper
+    if config and config.mod_changes then
+        creeper = config.mod_changes[modname]
+    end
+
+    if creeper then
+        local old_version = creeper.old_version or "0.0.0"
+        local new_version = creeper.new_version or "0.0.0"
+
+        if new_version >= "1.0.1" then
+            global.surface_viruses = {}
+        end
+    end
+end)
+
+
+-- Called on new game.
+-- Called when added to exiting game.
 script.on_init (first_time)
+
+
+-- Not called when added to existing game.
+-- Called when loaded after saved in existing game.
 script.on_load (function()
     commands.add_command (
         "creepolution",
@@ -101,7 +118,7 @@ script.on_nth_tick (CREEP_TICKS, function (event)
     if creep then
         local fini = false
 
-        if not creep.surface.valid then
+        if not filter_surface (creep.surface) then
             fini = true
 
         elseif creep.state == "search" then
@@ -126,7 +143,7 @@ script.on_nth_tick (CREEP_TICKS, function (event)
                 )
             end
 
-            if creeps and creep.surface.valid then
+            if creeps then
                 -- Let someone else do some work.
                 global.work_index = nil
 
@@ -157,7 +174,7 @@ script.on_nth_tick (CREEP_TICKS, function (event)
         local global_creep_state = global.creep_state
 
         for index, state in pairs (global_creep_state) do
-            if not state.surface.valid then
+            if not filter_surface (state.surface) then
                 global_creep_state[index] = nil
 
             elseif state.state == "wait" then
@@ -185,10 +202,10 @@ script.on_nth_tick (DEFERRED_TICKS, function (event)
     -- will be counted as "processed" in Camp Four.
     local deferred_processed = 0
     for key, chunk in pairs (global.deferred_chunks) do
-        local surface = game.surfaces[chunk.surface_index]
+        local surface = filter_surface (game.surfaces[chunk.surface_index])
         local position = chunk.chunk_position.area.left_top
 
-        if surface and surface.valid then
+        if surface then
             local pollution = surface.get_pollution (position)
             if pollution > 0 then
                 -- We need to interrogate this chunk and add it to
@@ -249,8 +266,8 @@ script.on_nth_tick (EVO_TICKS, function (event)
         -- many creep is dotting the landscape.
         local creep_in_pollution = 0
         for key, chunk in pairs (evolution_chunks) do
-            local surface = game.surfaces[chunk.chunk.surface_index]
-            if surface and surface.valid then
+            local surface = filter_surface (game.surfaces[chunk.chunk.surface_index])
+            if surface then
                 -- Once it makes it into this list, there were creep.
                 -- Creep won't change (unlike pollution) unless it goes
                 -- back through the deferral list.
@@ -308,10 +325,10 @@ end)
 
 
 script.on_event (defines.events.on_biter_base_built, function (event)
-    -- The only purpose for processing this event is to add a little
-    -- variation to the perfect ellipses that Krastorio creates.
+     -- The only purpose for processing this event is to add a little
+     -- variation to the perfect ellipses that Krastorio creates.
     local entity = event.entity
-    if entity and entity.valid and entity.type == "unit_spawner" then
+    if filter_spawner (entity) then
         spawner_event (event.tick, entity)
     end
 end)
@@ -319,23 +336,28 @@ end)
 
 script.on_event (defines.events.on_entity_died, function (event)
     local entity = event.entity
-    if entity and entity.valid then
-        -- For evolution calculation.
+    if filter_spawner (entity) then
+        -- The spawner died, sadly interrupting its creep growth.
+        global.creep_state[entity.unit_number] = nil
+
+        -- For monitoring chunks if they have pollution.
         defer_chunk {entity.surface, entity.position}
     end
 end, {{ filter = "type", type = "unit-spawner" }})
 
 
 script.on_event (defines.events.on_entity_spawned, function (event)
-    local spawner = event.entity
-    if spawner and spawner.valid then
-        spawner_event (event.tick, spawner)
+    local entity = event.entity
+    if filter_spawner (entity) then
+        spawner_event (event.tick, entity)
     end
 end)
 
 
 function on_remove_tile (event)
-    local surface = game.surfaces[event.surface_index]
+    local surface = filter_surface (game.surfaces[event.surface_index])
+    if not surface then return end
+
     for _, tile in pairs (event.tiles) do
         if tile.old_tile.name == "kr-creep" then
             -- For evolution calculation.
@@ -353,8 +375,8 @@ script.on_event (defines.events.on_player_selected_area, function (event)
     if event.item == "kr-creep-collector" then
         -- The collector may be too far or have no creep, but that's
         -- okay. Once the deferred area is processed, it'll be resolved.
-        local surface = event.surface
-        if surface and surface.valid then
+        local surface = filter_surface (event.surface)
+        if surface then
             local chunk_left_top = {
                 x = math.floor (event.area.left_top.x / 32),
                 y = math.floor (event.area.left_top.y / 32)
@@ -368,6 +390,21 @@ script.on_event (defines.events.on_player_selected_area, function (event)
                     defer_chunk {surface, chunk_position={ x = x, y = y }}
                 end
             end
+        end
+    end
+end)
+
+
+script.on_event (defines.events.on_player_used_capsule, function (event)
+    if event.item and event.item.name == "kr-creep-virus" then
+        local player = game.players[event.player_index]
+        if player
+                and player.valid
+                and player.character
+                and player.character.valid
+        then
+            local surface = player.character.surface
+            global.surface_viruses[surface.index] = true
         end
     end
 end)
@@ -457,10 +494,10 @@ end
 
 
 function creep_iterative_search (creep)
-    local surface = creep.surface
+    local surface = filter_surface (creep.surface)
     creep.spawn_position = nil
 
-    if not surface.valid then
+    if not surface then
         creep.search_position = nil
         return
     end
@@ -501,11 +538,11 @@ end
 
 
 function creep_search_position (surface, position)
-    if not surface.valid then return nil end
+    if not filter_surface (surface) then return nil end
 
     local creeps = surface.find_tiles_filtered {
         position = position,
-        radius = 16,
+        radius = CREEP_SEARCH_RADIUS,
         name = "kr-creep",
     }
     local creeps_len = table_size (creeps)
@@ -514,7 +551,6 @@ function creep_search_position (surface, position)
         return nil
     end
 
-    local stats_loops = 0
     local search_position
     local rnd = math.random (1, creeps_len)
     for i=rnd, rnd + creeps_len do
@@ -523,7 +559,6 @@ function creep_search_position (surface, position)
             search_position = tile.position
             break
         end
-        stats_loops = stats_loops + 1
     end
 
     return search_position
@@ -536,7 +571,7 @@ function defer_chunk (params)
     local position = params[2] or params.position
     local chunk_position = params[3] or params.chunk_position
 
-    if not (surface and surface.valid) then return end
+    if not filter_surface (surface) then return end
     if not (position or chunk_position) then
         print (modname, "defer_chunk: bad params", serpent.line (params))
         __crash()
@@ -586,6 +621,28 @@ function filter_tile (tile)
 end
 
 
+function filter_spawner (entity)
+    if not entity then return nil end
+    if not entity.valid then return nil end
+    if not entity.type == "unit-spawner" then return nil end
+    -- Rampant has proxy spawners
+    if string.match (entity.name, "proxy") then return nil end
+
+    return entity
+end
+
+
+function filter_surface (surface, no_virus_check)
+    if not surface then return nil end
+    if not surface.valid then return nil end
+    if not no_virus_check and global.surface_viruses[surface.index] then
+        return nil
+    end
+
+    return surface
+end
+
+
 function init_creep_state (unit_number)
     global.creep_state[unit_number] = {
         state = "wait",
@@ -623,7 +680,7 @@ end
 
 
 function spawn_creep (surface, position, creeps)
-    if not surface.valid then return nil end
+    if not filter_surface (surface) then return nil end
 
     local offsets = {
         {-1, -1}, {0, -1}, {1, -1},
@@ -728,7 +785,7 @@ function surrounding_chunk_pollutions (surface, position)
     -- REQUIRES: valid surface
 
     local chunks = {}
-    local p = table.copy (position)
+    local p = table_deepcopy (position)
 
     -- Bind locally.
     local math_pi = math.pi
