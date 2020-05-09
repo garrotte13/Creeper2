@@ -9,6 +9,15 @@ data:extend ({
         order = "a"
     },
     {
+        type = "double-setting",
+        name = "creep-biter-death",
+        setting_type = "runtime-global",
+        default_value = 0.1,
+        minimum_value = 0,
+        maximum_value = 1.0,
+        order = "am"
+    },
+    {
         type = "int-setting",
         name = "creep-evolution-factor",
         setting_type = "runtime-global",
@@ -23,5 +32,12 @@ data:extend ({
         setting_type = "runtime-global",
         default_value = true,
         order = "c"
+    },
+    {
+        type = "bool-setting",
+        name = "creep-destroyed-by-fire",
+        setting_type = "runtime-global",
+        default_value = true,
+        order = "d"
     }
 })

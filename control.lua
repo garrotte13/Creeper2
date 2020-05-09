@@ -1,7 +1,22 @@
+--[[--
+TODO: Events
+
+- Remove nth for evo if CEF setting is 0;
+- Change registration (remove units) if creep-biter-death is 0
+- Remove registration for built/died/spawned if all surfaces have virus
+- Remove nth for creep, deferred if all surfaces have virus;
+- Register nth for creep, deferred if new surface addded;
+- Virus slowly removes creep so fire tick handler needed until
+  all creep remove. Occasionally count_tiles_filtered (limit=1) for
+  all surfaces with virus and remove nth if all surfaces == 0.
+--]]--
+
+
 local modname = "creeper"
 
 local DEVELOP = false
 
+local fire = require "fire"
 local util = require "util"
 local table_deepcopy = util.table.deepcopy
 
@@ -19,7 +34,14 @@ local TILES_PER_INTERVAL = 16
 local UNIT_WAIT_TICKS = 60 * 3
 
 
+-- Other globals.
+local creep_chance_on_death = 0
+
+
 function first_time()
+    -- Cache the setting for spawning creep on death.
+    creep_chance_on_death = settings.global["creep-biter-death"].value
+
     -- Register our command.
     commands.add_command (
         "creepolution",
@@ -79,6 +101,10 @@ script.on_configuration_changed (function (config)
         local old_version = creeper.old_version or "0.0.0"
         local new_version = creeper.new_version or "0.0.0"
 
+        print (string.format (
+                "%s: %s -> %s", modname, old_version, new_version
+        ))
+
         if new_version >= "1.0.1" then
             global.surface_viruses = {}
         end
@@ -94,6 +120,9 @@ script.on_init (first_time)
 -- Not called when added to existing game.
 -- Called when loaded after saved in existing game.
 script.on_load (function()
+    -- Cache the setting for spawning creep on death.
+    creep_chance_on_death = settings.global["creep-biter-death"].value
+
     commands.add_command (
         "creepolution",
         "Display evolution accounting for creep.",
@@ -336,14 +365,27 @@ end)
 
 script.on_event (defines.events.on_entity_died, function (event)
     local entity = event.entity
-    if filter_spawner (entity) then
+    if entity.type == "unit" then
+        if creep_chance_on_death and math.random() < creep_chance_on_death then
+            local surface = entity.surface
+            if filter_surface (surface) then
+                local position = entity.position
+                local tile = filter_tile (surface.get_tile (position))
+                if tile and tile.name ~= "kr-creep" then
+                    surface.set_tiles ({{ name="kr-creep", position=position }})
+                end
+            end
+        end
+    elseif filter_spawner (entity) then
         -- The spawner died, sadly interrupting its creep growth.
         global.creep_state[entity.unit_number] = nil
 
         -- For monitoring chunks if they have pollution.
         defer_chunk {entity.surface, entity.position}
     end
-end, {{ filter = "type", type = "unit-spawner" }})
+end, {{ filter = "type", type = "unit-spawner" },
+      { filter = "type", type = "unit" }
+})
 
 
 script.on_event (defines.events.on_entity_spawned, function (event)
@@ -407,6 +449,21 @@ script.on_event (defines.events.on_player_used_capsule, function (event)
             global.surface_viruses[surface.index] = true
         end
     end
+end)
+
+
+script.on_event (defines.events.on_runtime_mod_setting_changed, function (event)
+    if event.setting == "creep-biter-death"
+            and event.setting_type == "runtime-global" then
+        creep_chance_on_death = settings.global["creep-biter-death"].value
+    end
+end)
+
+
+-- XXX: FIRE
+script.on_nth_tick (fire.FLAME_TICKS, fire.spread_flames)
+script.on_event (defines.events.on_trigger_created_entity, function (event)
+    fire.on_trigger_created_entity (event)
 end)
 
 

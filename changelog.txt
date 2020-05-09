@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.0
+Date: 2020.05.03
+  Features:
+    - Biters have a chance of leaving creep upon death;
+    - Flames burn creep, but releases stored pollution
+---------------------------------------------------------------------------------------------------
 Version: 1.0.1
 Date: 2020.05.05
   Changes:
