@@ -1,4 +1,16 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.2
+Date: 2020.05.11
+  Features:
+    - Spawn creep on biter death
+  Changes:
+    - Fixed data bloat that mistakenly tracked worms, and reduced
+      state structure size;
+    - Increased creep evolution setting (default: 9 -> 90);
+    - Reduced creep spawn to 33% due to faster backlog processing and
+      other tweaks (default: 21 -> 7); and
+    - Existing saves will use the two updated settings
+---------------------------------------------------------------------------------------------------
 Version: 1.0.1
 Date: 2020.05.05
   Changes:
