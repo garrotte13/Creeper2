@@ -21,7 +21,7 @@ data:extend ({
         type = "int-setting",
         name = "creep-evolution-factor",
         setting_type = "runtime-global",
-        default_value = 9,    -- human-scaled
+        default_value = 90,    -- human-scaled
         minimum_value = 0,    -- disabled
         maximum_value = 1000,
         order = "b",

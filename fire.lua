@@ -1,5 +1,7 @@
--- before spreading check the tile that it wasn't mined out
--- from underneath us. gotta be present to spread.
+-- TODO: See about spreading from trees. Unfortunately, an event doesn't
+-- TODO:   trigger when trees are damaged by fire, unlike other entities.
+
+-- TODO: Address @CONFIG migration before ship
 
 local fire = {
     FLAME_TICKS = 19,
@@ -11,13 +13,22 @@ local fire = {
 
     creeper_flames = {
         [0] = "creeper-flame-0",
-        [1] = "creeper-flame-1"
+        [1] = "creeper-flame-1",
+        [2] = "creeper-flame-2",
+        [3] = "creeper-flame-3",
     }
 }
 
 
-local util = require "util"
-local table_deepcopy = util.table.deepcopy
+
+-- XXX: FIRE
+script.on_nth_tick (fire.FLAME_TICKS, fire.spread_flames)
+script.on_event (defines.events.on_trigger_created_entity, function (event)
+    fire.on_trigger_created_entity (event)
+end)
+
+local util = require "shared"
+
 
 table.insert_keyed_list = function (tbl, key, value)
     if tbl[key] == nil then
@@ -31,7 +42,16 @@ end
 --print = function(...) end
 
 
+function fire.on_event (event)
+    local action = event.name
+    if action == "nth_tick_handler" then
+    end
+end
+
+
 function fire.on_init()
+    global.conditional_events = {}
+
     global.active_flames = {}
     global.by_tick = {}
 
@@ -95,6 +115,8 @@ end
 
 
 function fire.on_trigger_created_entity (event)
+    __debug()  -- XXX: CONFIG
+
     local flame = filter_flame (event.entity)
     if not flame then return end
 
@@ -107,6 +129,9 @@ function fire.on_trigger_created_entity (event)
         })
 
         local force = flame.force
+
+        -- XXX: This doesn't work. It's as if the effect is
+        -- something else, but I cannot "find" it to remove it.
         flame.destroy()
 
         -- Replace it with ours since it is on creep.
@@ -115,22 +140,21 @@ function fire.on_trigger_created_entity (event)
             position = tile.position,
             force = force
         }
-        flame = FlameEntity (entity)
 
-        __debug()  -- XXX: CONFIG
+        local new_flame = FlameEntity (entity)
 
         local flame_info = {
             create_tick = event.tick,
-            flame = flame,
-            seed_index = flame.index,
+            flame = new_flame,
+            seed_index = new_flame.index,
             spawned_flames = 0,
             spread_tick = when_spread (event.tick)
         }
-        global.active_flames[flame.index] = flame_info
+        global.active_flames[new_flame.index] = flame_info
         table.insert_keyed_list (
-                global.by_tick, flame_info.spread_tick, flame.index
+                global.by_tick, flame_info.spread_tick, new_flame.index
         )
-        global.spread_limits[flame.index] = math.random (
+        global.spread_limits[new_flame.index] = math.random (
                 fire.SPREAD_LIMIT[1], fire.SPREAD_LIMIT[2]
         )
     end
@@ -165,7 +189,7 @@ function spread_flame (tick, flame_info, flame_count)
         position.y = position.y + math_random() / 2
 
         local entity = surface_create_entity {
-            name = fire.creeper_flames[math_random (0, 1)],
+            name = fire.creeper_flames[math_random (1, 3)],
             position = position,
             force = flame_info.flame.force
         }
@@ -193,15 +217,6 @@ end
 
 
 function fire.spread_flames (event)
-    -- TODO: Less dense flames. A flame is considered to occupy all
-    --  squares around it. So spreading skips two squares.
-    -- TODO: Figure out an sorted list to search based off the
-    --  `spread_tick` time so we don't waste time.
-
-    -- TODO: Allows the spread to trees and vice-versa
-    -- TODO: Wind speeds up spreading to direction
-    -- TODO: Creep health by evolution
-    -- TODO: Slowly restore decoratives
     __debug()  -- XXX: @CONFIG
 
     -- Bind locally.
@@ -213,14 +228,13 @@ function fire.spread_flames (event)
     local new_flames = {}
 
     if table_size(active_flames) > 0 or table_size(by_tick) > 0 or table_size (spread_limits) > 0 then
-        print (event.tick, table_size(active_flames), table_size(by_tick), table_size (spread_limits))
+        --print (event.tick, table_size(active_flames), table_size(by_tick), table_size (spread_limits))
     end
 
     local tick = event.tick
     for t = tick - fire.FLAME_TICKS + 1, tick do
         local now_flame_indices = by_tick[t] or {}
         for k, index in pairs (now_flame_indices) do
-            processed = processed + 1
             local flame_info = active_flames[index]
             if not flame_info then goto continue end
 

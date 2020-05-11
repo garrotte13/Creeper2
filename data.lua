@@ -3,6 +3,11 @@ local util = require "util"
 local fireutil = {}
 
 
+function fireutil.make_color (r, g, b, a)
+  return { r = r * a, g = g * a, b = b * a, a = a }
+end
+
+
 function fireutil.foreach(table_, fun_)
   for k, tab in pairs(table_) do
     fun_(tab)
@@ -224,29 +229,77 @@ function fireutil.create_fire_pictures(opts)
 end
 
 
+function fireutil.update_lifetimes (flame)
+  flame.maximum_lifetime = flame.initial_lifetime + 1800
+  flame.burnt_patch_lifetime = flame.maximum_lifetime * 1.1
+end
+
+
+local picture_opts = {
+  blend_mode = "normal",
+  animation_speed = 0.5,
+  scale = 1.1,
+  tint = fireutil.make_color (1, 0.6, 1, 1)
+}
+
+
 -- By extending the `initial_flame_count` and `delay_between_initial_flames`,
 -- the flames and its smoke can be extended for long periods, almost like
 -- little brush fires are re-igniting.
-
 
 local flame_0 = util.table.deepcopy (data.raw.fire["fire-flame"])
 flame_0.name = "creeper-flame-0"
 flame_0.initial_lifetime = 480  -- default: 120
 flame_0.delay_between_initial_flames = 240 -- default: 10
-flame_0.light.intensity = 0.5  -- default: 1
-flame_0.light.size = 10  -- default: 20
 flame_0.working_sound.match_volume_to_activity = false
-flame_0.pictures = fireutil.create_fire_pictures({
-  blend_mode = "additive",
-  animation_speed = 0.5,
-  scale = 0.4,
-  tint = { r = 1, g = 0.6, b = 1, a = 1 }
-})
+flame_0.pictures = fireutil.create_fire_pictures (picture_opts)
+for _, smoke in pairs (flame_0.smoke) do
+  smoke.color = fireutil.make_color (1, 0.6, 1, 0.75)
+  smoke.tint = fireutil.make_color (1, 0.6, 1, 0.75)
+end
+for _, smoke in pairs (flame_0.smoke_source_pictures) do
+  smoke.color = fireutil.make_color (1, 0.6, 1, 0.75)
+  smoke.tint = fireutil.make_color (1, 0.6, 1, 0.75)
+end
+fireutil.update_lifetimes (flame_0)
 
+-- XXX: Iterate over sound to lower the volume based on the
+-- XXX: the scale of the flame.
+
+-- Reduce for the normal spreading flames.
+picture_opts = util.table.deepcopy (picture_opts)
+picture_opts.scale = 0.75
 
 local flame_1 = util.table.deepcopy (flame_0)
 flame_1.name = "creeper-flame-1"
-flame_1.initial_lifetime = 960
-flame_1.delay_between_initial_flames = 480
+flame_1.initial_lifetime = 480
+flame_1.delay_between_initial_flames = 240
+flame_1.light.intensity = 1 * picture_opts.scale -- default: 1
+flame_1.light.size = 20 * picture_opts.scale  -- default: 20
+flame_1.pictures = fireutil.create_fire_pictures (picture_opts)
+fireutil.update_lifetimes (flame_1)
 
-data:extend ({ flame_0, flame_1 })
+picture_opts = util.table.deepcopy (picture_opts)
+picture_opts.scale = 0.5
+
+local flame_2 = util.table.deepcopy (flame_1)
+flame_2.name = "creeper-flame-2"
+flame_2.initial_lifetime = 960
+flame_2.delay_between_initial_flames = 480
+flame_2.light.intensity = 1 * picture_opts.scale
+flame_2.light.size = 20 * picture_opts.scale
+fireutil.update_lifetimes (flame_2)
+
+picture_opts = util.table.deepcopy (picture_opts)
+picture_opts.scale = 0.25
+
+local flame_3 = util.table.deepcopy (flame_2)
+flame_3.name = "creeper-flame-3"
+flame_3.initial_lifetime = 1920
+flame_3.delay_between_initial_flames = 960
+flame_2.light.intensity = 1 * picture_opts.scale
+flame_2.light.size = 20 * picture_opts.scale
+fireutil.update_lifetimes (flame_3)
+
+
+data:extend ({ flame_0, flame_1, flame_2, flame_3})
