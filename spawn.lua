@@ -513,7 +513,7 @@ lib.on_nth_tick = {
 lib.on_init = function()
     -- Cache the settings.
     creep_chance_on_death = settings.global["creep-biter-death"].value
-    creep_growth = settings.global["creep-growth"].value
+    creep_growth = settings.global["creep-growth-1_0_2"].value
 
     -- The Krastorio virus has been released on this surface.
     global.surface_viruses = {}
@@ -532,7 +532,7 @@ end
 lib.on_load = function()
     -- Cache the settings.
     creep_chance_on_death = settings.global["creep-biter-death"].value
-    creep_growth = settings.global["creep-growth"].value
+    creep_growth = settings.global["creep-growth-1_0_2"].value
 
     util.update_event_filters (lib.event_filters)
 end
@@ -562,7 +562,7 @@ lib.on_configuration_changed = function (config)
         end
 
         if old_version >= "1.0.0" and new_version == "1.0.2" then
-            game.print { "", "Creeper: Purging stale creepers; this may hang briefly." }
+            game.print { "", "Creeper - Purging stale creepers, please wait." }
         end
     end
 end

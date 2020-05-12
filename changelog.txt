@@ -1,18 +1,29 @@
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.0
-Date: 2020.05.03
+Date: 2020.05.15
   Features:
-    - Biters have a chance of leaving creep upon death;
     - Flames burn creep, but releases stored pollution
+---------------------------------------------------------------------------------------------------
+Version: 1.0.2
+Date: 2020.05.11
+  Features:
+    - Biters have a chance of leaving creep upon death
+  Changes:
+    - Fixed data bloat that mistakenly tracked worms, and reduced
+      state structure size;
+    - Increased creep evolution setting (default: 9 -> 90);
+    - Reduced creep spawn to 33% due to faster backlog processing and
+      other tweaks (default: 21 -> 7); and
+    - Replaced setting keys to force update to use the new settings
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.1
 Date: 2020.05.05
   Changes:
-    - Disable creeping creep for surface after virus release;
+    - Disable creeping creep for surface after virus release; and
     - Updated thumbnail to be more Krastorio
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.0
 Date: 2020.04.28
   Features:
-    - Krastorio 2 creep creeps;
+    - Krastorio 2 creep creeps; and
     - Supports Factorio 0.18

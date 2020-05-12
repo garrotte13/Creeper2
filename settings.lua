@@ -1,9 +1,9 @@
 data:extend ({
     {
         type = "int-setting",
-        name = "creep-growth",
+        name = "creep-growth-1_0_2",
         setting_type = "runtime-global",
-        default_value = 21,
+        default_value = 7,
         minimum_value = 1,
         maximum_value = 128,
         order = "a"
@@ -19,9 +19,9 @@ data:extend ({
     },
     {
         type = "int-setting",
-        name = "creep-evolution-factor",
+        name = "creep-evolution-factor-1_0_2",
         setting_type = "runtime-global",
-        default_value = 90,    -- human-scaled
+        default_value = 90,   -- human-scaled
         minimum_value = 0,    -- disabled
         maximum_value = 1000,
         order = "b",

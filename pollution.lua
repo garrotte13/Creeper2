@@ -233,7 +233,7 @@ local on_evo_nth_tick = function (event)
         -- Based on the creep evolution factor setting (scaled down from
         -- human form), calculate how much evolution factor from creep.
         -- Before applied to the base of 1 - evo.
-        local evo_c_pollution = evo_factor / 10000 * pollution
+        local evo_c_pollution = evo_factor / 100000 * pollution
 
         -- Only updating the enemy as they are the ones with creep.
         local f = game.forces.enemy
@@ -284,7 +284,7 @@ lib.on_nth_tick = {
 -- Called when added to exiting game.
 lib.on_init = function()
     -- Cache the settings.
-    evo_factor = settings.global["creep-evolution-factor"].value
+    evo_factor = settings.global["creep-evolution-factor-1_0_2"].value
     is_bonus_checked = settings.global["creep-evolution-pollution-bonus"].value
 
     -- We lazily track the chunks with pollution, using events
@@ -327,7 +327,7 @@ end
 -- Called when loaded after saved in existing game.
 lib.on_load = function()
     -- Cache the settings.
-    evo_factor = settings.global["creep-evolution-factor"].value
+    evo_factor = settings.global["creep-evolution-factor-1_0_2"].value
     is_bonus_checked = settings.global["creep-evolution-pollution-bonus"].value
 
     util.update_event_filters (lib.event_filters)
@@ -351,15 +351,6 @@ lib.on_configuration_changed = function (config)
                 "%s (pollution): %s -> %s",
                 modname, old_version, new_version
         ))
-
-        if old_version > "0.0.0" and new_version == "1.0.2" then
-            for _, player in pairs (game.players) do
-                local setting = settings.get_player_settings (player)
-                local old = setting["creep-evolution-factor"].value
-                local new = math.min (old * 10, 1000)
-                setting["creep-evolution-factor"] = { value = new }
-            end
-        end
     end
 end
 
