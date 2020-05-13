@@ -116,17 +116,6 @@ local on_remove_tile = function (event)
 end
 
 
-local on_runtime_settings = function (event)
-    if event.setting_type == "runtime-global" then
-        if event.setting == "creep-evolution-factor" then
-            evo_factor = settings.global[event.setting].value
-        elseif event.setting == "creep-evolution-pollution-bonus" then
-            is_bonus_checked = settings.global[event.setting].value
-        end
-    end
-end
-
-
 local on_deferred_nth_tick = function (event)
     -- The big hit in time is counting tiles. That's what
     -- will be counted as "processed" in Camp Four.
@@ -250,6 +239,17 @@ local on_evo_nth_tick = function (event)
 end
 
 
+local on_runtime_settings = function (event)
+    if event.setting_type == "runtime-global" then
+        if event.setting == "creep-evolution-factor" then
+            evo_factor = settings.global[event.setting].value
+        elseif event.setting == "creep-evolution-pollution-bonus" then
+            is_bonus_checked = settings.global[event.setting].value
+        end
+    end
+end
+
+
 local lib = {}
 
 -- Exports
@@ -280,12 +280,15 @@ lib.on_nth_tick = {
 }
 
 
+local cache_settings = function()
+    evo_factor = settings.global["creep-evolution-factor-1_0_2"].value
+    is_bonus_checked = settings.global["creep-evolution-pollution-bonus"].value
+end
+
 -- Called on new game.
 -- Called when added to exiting game.
 lib.on_init = function()
-    -- Cache the settings.
-    evo_factor = settings.global["creep-evolution-factor-1_0_2"].value
-    is_bonus_checked = settings.global["creep-evolution-pollution-bonus"].value
+    cache_settings()
 
     -- We lazily track the chunks with pollution, using events
     -- to guess if we should turn our Sauron gaze upon them.
@@ -326,10 +329,7 @@ end
 -- Not called when added to existing game.
 -- Called when loaded after saved in existing game.
 lib.on_load = function()
-    -- Cache the settings.
-    evo_factor = settings.global["creep-evolution-factor-1_0_2"].value
-    is_bonus_checked = settings.global["creep-evolution-pollution-bonus"].value
-
+    cache_settings()
     util.update_event_filters (lib.event_filters)
 end
 

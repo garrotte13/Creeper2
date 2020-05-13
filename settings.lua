@@ -39,5 +39,13 @@ data:extend ({
         setting_type = "runtime-global",
         default_value = true,
         order = "d"
-    }
+    },
+    {
+        type = "bool-setting",
+        name = "creep-wildfires",
+        setting_type = "runtime-global",
+        default_value = false,
+        order = "d"
+    },
+
 })

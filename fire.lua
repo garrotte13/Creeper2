@@ -1,142 +1,97 @@
 -- TODO: See about spreading from trees. Unfortunately, an event doesn't
 -- TODO:   trigger when trees are damaged by fire, unlike other entities.
+-- TODO:   Will probably need to modify prototype to create_entity
 
--- TODO: Address @CONFIG migration before ship
+-- TODO: See about nuclear bombs and other "fire" sources lighting
+-- TODO    creep on fire. Or maybe just remove creep in its path.
 
-local fire = {
-    FLAME_TICKS = 19,
-    -- XXX: These need to be programmatic based on the creeper flames
-    -- XXX: and vice versa.
-    SPREAD_DELAY = { 300, 180 },
-    SPREAD_N_DELAY = { 240, 240 },
-    SPREAD_LIMIT = { 100, 1000 },
+-- TODO: Test tank flamethrower
 
-    creeper_flames = {
-        [0] = "creeper-flame-0",
-        [1] = "creeper-flame-1",
-        [2] = "creeper-flame-2",
-        [3] = "creeper-flame-3",
-    }
+
+local util = require "utils"
+
+
+local CREEPER_FLAMES = {
+    "creeper-flame-1",
+    "creeper-flame-2",
+    "creeper-flame-3",
+    "creeper-flame-4",
 }
+local CREEPER_TILE = "creeper-landfill"
+
+local FLAME_NTH_TICKS = 19
+-- XXX: Are both needed? Is the initial vs. post delta noticeable?
+local SPREAD_DELAY = { 300, 180 }
+local SPREAD_N_DELAY = { 240, 240 }
+local SPREAD_LIMIT = { 100, 1000 }
 
 
-
--- XXX: FIRE
-script.on_nth_tick (fire.FLAME_TICKS, fire.spread_flames)
-script.on_event (defines.events.on_trigger_created_entity, function (event)
-    fire.on_trigger_created_entity (event)
-end)
-
-local util = require "shared"
+-- Cached setting values.
+local burnination = true
+local wildfires = false
 
 
-table.insert_keyed_list = function (tbl, key, value)
-    if tbl[key] == nil then
-        tbl[key] = { value }
-    else
-        table.insert (tbl[key], value)
-    end
-end
+-- Local binds.
+local math_random = math.random
+local filter_tile = util.filter_tile
+local filter_surface = util.filter_surface
+local position_key = util.position_key
 
 
---print = function(...) end
-
-
-function fire.on_event (event)
-    local action = event.name
-    if action == "nth_tick_handler" then
-    end
-end
-
-
-function fire.on_init()
-    global.conditional_events = {}
-
-    global.active_flames = {}
-    global.by_tick = {}
-
-    -- Indexed by the seed flame index. Used to track how many more
-    -- flames can be spawned by it and its descendants.
-    global.spread_limits = {}
-end
-
-
-function fire.on_configuration_changed()
-    -- Added in 1.1.0
-    global.active_flames = {}
-    global.spread_limits = {}
-end
-
-
-function __debug()
-    if global.active_flames == nil then
-        fire.on_init()
-    end
-end
-
-
-function pos_key (entity)
-    return table.concat ({
-        entity.surface.index, ":",
-        entity.position.x, ":",
-        entity.position.y
-    })
-end
-
-
-function FlameEntity (entity)
+local FlameEntity = function (entity)
     local flame = {}
     setmetatable (flame, { __index = entity })
-    flame.index = pos_key (entity)
+    flame.index = position_key (entity)
 
     return flame
 end
 
 
-function filter_flame (entity)
+local filter_flame = function (entity)
     if not (entity and entity.valid) then return nil end
-    if not entity.surface.valid then return nil end
+    if not filter_surface (entity.surface, true) then return nil end
     if entity.type ~= "fire" then return nil end
 
     return FlameEntity (entity)
 end
 
 
-function when_spread (whence, how)
+local when_spread = function (whence, how)
     local parts
+    local coeffecient = 1
+
     if how then
-        parts = fire.SPREAD_N_DELAY
+        parts = SPREAD_N_DELAY
     else
-        parts = fire.SPREAD_DELAY
+        parts = SPREAD_DELAY
     end
 
-    return whence + math.random (parts[1], parts[1] + parts[2])
+    return whence + math_random (parts[1], parts[1] + parts[2])
 end
 
 
-function fire.on_trigger_created_entity (event)
-    __debug()  -- XXX: CONFIG
+local on_trigger_created_entity = function (event)
+    if not burnination then return end
 
     local flame = filter_flame (event.entity)
     if not flame then return end
 
     local surface = flame.surface
-    local tile = surface.get_tile (flame.position)
-    -- XXX: Move filter_tile to lib.lua
-    if tile and tile.valid and tile.name == "kr-creep" then
+    local tile = filter_tile (surface.get_tile (flame.position))
+    if tile and tile.name == "kr-creep" then
         surface.set_tiles ({
-            { name = "landfill", position = tile.position }
+            { name = CREEPER_TILE, position = tile.position }
         })
 
         local force = flame.force
 
         -- XXX: This doesn't work. It's as if the effect is
-        -- something else, but I cannot "find" it to remove it.
+        -- XXX: something else, but I cannot "find" it to remove it.
         flame.destroy()
 
         -- Replace it with ours since it is on creep.
         local entity = surface.create_entity {
-            name = fire.creeper_flames[0],
+            name = CREEPER_FLAMES[1],
             position = tile.position,
             force = force
         }
@@ -151,19 +106,27 @@ function fire.on_trigger_created_entity (event)
             spread_tick = when_spread (event.tick)
         }
         global.active_flames[new_flame.index] = flame_info
-        table.insert_keyed_list (
+        util.insert_keyed_table (
                 global.by_tick, flame_info.spread_tick, new_flame.index
         )
-        global.spread_limits[new_flame.index] = math.random (
-                fire.SPREAD_LIMIT[1], fire.SPREAD_LIMIT[2]
+
+        local coefficient = 1
+        if wildfires then
+            coefficient = 10
+        end
+
+        global.spread_limits[new_flame.index] = math_random (
+                SPREAD_LIMIT[1],
+                SPREAD_LIMIT[2] * coefficient
         )
     end
 end
 
 
-function spread_flame (tick, flame_info, flame_count)
+local spread_flame = function (tick, flame_info, flame_count)
+    -- REQUIRES: valid flame/surface
+
     -- Bind locally.
-    local math_random = math.random
     local table_insert = table.insert
 
     local surface = flame_info.flame.surface
@@ -189,7 +152,7 @@ function spread_flame (tick, flame_info, flame_count)
         position.y = position.y + math_random() / 2
 
         local entity = surface_create_entity {
-            name = fire.creeper_flames[math_random (1, 3)],
+            name = CREEPER_FLAMES[math_random (2, 4)],
             position = position,
             force = flame_info.flame.force
         }
@@ -216,10 +179,11 @@ function spread_flame (tick, flame_info, flame_count)
 end
 
 
-function fire.spread_flames (event)
-    __debug()  -- XXX: @CONFIG
+local on_flame_nth_tick = function (event)
+    if not burnination then return end
 
     -- Bind locally.
+    local table_insert = table.insert
     local active_flames = global.active_flames
     local by_tick = global.by_tick
     local spread_limits = global.spread_limits
@@ -227,35 +191,45 @@ function fire.spread_flames (event)
     -- Table that contains tables of new flames that were generated.
     local new_flames = {}
 
-    if table_size(active_flames) > 0 or table_size(by_tick) > 0 or table_size (spread_limits) > 0 then
-        --print (event.tick, table_size(active_flames), table_size(by_tick), table_size (spread_limits))
-    end
-
     local tick = event.tick
-    for t = tick - fire.FLAME_TICKS + 1, tick do
+    for t = tick - FLAME_NTH_TICKS + 1, tick do
         local now_flame_indices = by_tick[t] or {}
-        for k, index in pairs (now_flame_indices) do
+        for _, index in pairs (now_flame_indices) do
             local flame_info = active_flames[index]
             if not flame_info then goto continue end
+
+            local flame = flame_info.flame
 
             local spread_limit = spread_limits[flame_info.seed_index]
             if not spread_limit or spread_limit <= 0 then
                 active_flames[index] = nil
                 spread_limits[flame_info.seed_index] = nil
-            elseif not flame_info.flame.valid then
+            elseif not filter_flame (flame) then
                 active_flames[index] = nil
             else
-                local flames, remaining_tiles = spread_flame (tick, flame_info, 1)
+                local spread_count = 1
+                if wildfires then
+                    spread_count = 2
+                end
+
+                local flames, remaining_tiles = spread_flame (
+                        tick,
+                        flame_info,
+                        spread_count
+                )
+
                 flame_info.spread_tick = when_spread (tick, true)
-                table.insert_keyed_list (
+                util.insert_keyed_table (
                         by_tick,
                         flame_info.spread_tick,
                         flame_info.flame.index
                 )
 
                 if flames then
-                    table.insert (new_flames, flames)
-                    spread_limits[flame_info.seed_index] = spread_limit - 1
+                    table_insert (new_flames, flames)
+
+                    local remaining = spread_limit - table_size (flames)
+                    spread_limits[flame_info.seed_index] = remaining
                 end
 
                 if remaining_tiles == 0 then
@@ -272,23 +246,23 @@ function fire.spread_flames (event)
 
     -- Finalize all the spread flames, killing off the creep, and
     -- setting them up in the global tables.
-    local landfill_by_surface = {}
+    local replacement_by_surface = {}
 
     for _, flames in pairs (new_flames) do
         for _, flame_info in pairs (flames) do
             local flame = flame_info.flame
 
             local surface_index = flame.surface.index
-            local landfill = { name = "landfill", position = flame.position }
+            local landfill = { name = CREEPER_TILE, position = flame.position }
 
-            table.insert_keyed_list (
-                    landfill_by_surface,
+            util.insert_keyed_table (
+                    replacement_by_surface,
                     surface_index,
                     landfill
             )
 
             active_flames[flame.index] = flame_info
-            table.insert_keyed_list (
+            util.insert_keyed_table (
                     by_tick, flame_info.spread_tick, flame.index
             )
         end
@@ -299,7 +273,7 @@ function fire.spread_flames (event)
         global.spread_limits = {}
     end
 
-    for surface_index, landscape_tiles in pairs (landfill_by_surface) do
+    for surface_index, landscape_tiles in pairs (replacement_by_surface) do
         local surface = game.surfaces[surface_index]
         if surface and surface.valid then
             surface.set_tiles (landscape_tiles)
@@ -308,4 +282,83 @@ function fire.spread_flames (event)
 end
 
 
-return fire
+local on_runtime_settings = function (event)
+    if event.setting_type == "runtime-global" then
+        if event.setting == "creep-destroyed-by-fire" then
+            burnination = settings.global[event.setting].value
+        elseif event.setting == "creep-wildfires" then
+            wildfires = settings.global[event.setting].value
+        end
+    end
+end
+
+
+local lib = {}
+
+lib.events = {
+    [defines.events.on_runtime_mod_setting_changed] = on_runtime_settings,
+    [defines.events.on_trigger_created_entity] = on_trigger_created_entity,
+}
+
+lib.on_nth_tick = {
+    [FLAME_NTH_TICKS] = on_flame_nth_tick,
+}
+
+
+local cache_settings = function()
+    burnination = settings.global["creep-destroyed-by-fire"].value
+    wildfires = settings.global["creep-wildfires"].value
+end
+
+
+-- Called on new game.
+-- Called when added to exiting game.
+lib.on_init = function()
+    cache_settings()
+
+    global.active_flames = {}
+    global.by_tick = {}
+
+    -- Indexed by the seed flame index. Used to track how many more
+    -- flames can be spawned by it and its descendants.
+    global.spread_limits = {}
+end
+
+
+-- Not called when added to existing game.
+-- Called when loaded after saved in existing game.
+lib.on_load = function()
+    cache_settings()
+end
+
+
+-- Not called on new game.
+-- Called when added to existing game.
+lib.on_configuration_changed = function (config)
+    local modname = util.modname
+    local creeper
+    if config and config.mod_changes then
+        creeper = config.mod_changes[modname]
+    end
+
+    if creeper then
+        local old_version = creeper.old_version or "0.0.0"
+        local new_version = creeper.new_version or "0.0.0"
+
+        print (string.format (
+                "%s (fire): %s -> %s",
+                modname, old_version, new_version
+        ))
+
+        if new_version == "1.0.3" then
+            cache_settings()
+
+            global.active_flames = {}
+            global.by_tick = {}
+            global.spread_limits = {}
+        end
+    end
+end
+
+
+return lib

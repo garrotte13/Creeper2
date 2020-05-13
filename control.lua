@@ -1,6 +1,7 @@
 local util = require "utils"
 
 local handler = require "event_handler"
+handler.add_lib (require "fire")
 handler.add_lib (require "pollution")
 handler.add_lib (require "spawn")
 

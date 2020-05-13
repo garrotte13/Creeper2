@@ -2,6 +2,11 @@ local util = require "util"
 
 local fireutil = {}
 
+-- Some mods make landfill deconstructable, probably by setting a
+-- property on the name "landfill".
+local landfill = util.table.deepcopy (data.raw.tile["landfill"])
+landfill.name = "creeper-landfill"
+
 
 function fireutil.make_color (r, g, b, a)
   return { r = r * a, g = g * a, b = b * a, a = a }
@@ -229,77 +234,44 @@ function fireutil.create_fire_pictures(opts)
 end
 
 
-function fireutil.update_lifetimes (flame)
+function fireutil.make_flame (name, scale)
+  local picture_opts = {
+    blend_mode = "normal",
+    animation_speed = 0.5,
+    scale = scale,
+    tint = fireutil.make_color (1, 0.6, 1, 1)
+  }
+
+  local flame = util.table.deepcopy (data.raw.fire["fire-flame"])
+  flame.name = name
+
+  -- By extending the `initial_flame_count` and `delay_between_initial_flames`,
+  -- the flames and its smoke can be extended for long periods, almost like
+  -- little brush fires are re-igniting. We divide by the scale
+  -- because bigger flames burn faster.
+  flame.damage_per_tick.amount = 45 * picture_opts.scale / 60  -- default: 13/60
+  flame.emissions_per_second = 0.018 * picture_opts.scale  -- default: 0.005
+  flame.initial_lifetime = 240 / picture_opts.scale  -- default: 120
+  flame.delay_between_initial_flames = 480 / picture_opts.scale -- default: 10
   flame.maximum_lifetime = flame.initial_lifetime + 1800
   flame.burnt_patch_lifetime = flame.maximum_lifetime * 1.1
+
+  flame.pictures = fireutil.create_fire_pictures (picture_opts)
+  flame.light.intensity = flame.light.intensity * picture_opts.scale
+  flame.light.size = flame.light.size * picture_opts.scale  -- default: 20
+
+  flame.working_sound.match_volume_to_activity = false
+  for _, sound in pairs (flame.working_sound.sound) do
+    sound.volume = sound.volume * picture_opts.scale
+  end
+
+  return flame
 end
 
 
-local picture_opts = {
-  blend_mode = "normal",
-  animation_speed = 0.5,
-  scale = 1.1,
-  tint = fireutil.make_color (1, 0.6, 1, 1)
-}
+local flame_1 = fireutil.make_flame ("creeper-flame-1", 1.1)
+local flame_2 = fireutil.make_flame ("creeper-flame-2", 0.75)
+local flame_3 = fireutil.make_flame ("creeper-flame-3", 0.5)
+local flame_4 = fireutil.make_flame ("creeper-flame-4", 0.25)
 
-
--- By extending the `initial_flame_count` and `delay_between_initial_flames`,
--- the flames and its smoke can be extended for long periods, almost like
--- little brush fires are re-igniting.
-
-local flame_0 = util.table.deepcopy (data.raw.fire["fire-flame"])
-flame_0.name = "creeper-flame-0"
-flame_0.initial_lifetime = 480  -- default: 120
-flame_0.delay_between_initial_flames = 240 -- default: 10
-flame_0.working_sound.match_volume_to_activity = false
-flame_0.pictures = fireutil.create_fire_pictures (picture_opts)
-for _, smoke in pairs (flame_0.smoke) do
-  smoke.color = fireutil.make_color (1, 0.6, 1, 0.75)
-  smoke.tint = fireutil.make_color (1, 0.6, 1, 0.75)
-end
-for _, smoke in pairs (flame_0.smoke_source_pictures) do
-  smoke.color = fireutil.make_color (1, 0.6, 1, 0.75)
-  smoke.tint = fireutil.make_color (1, 0.6, 1, 0.75)
-end
-fireutil.update_lifetimes (flame_0)
-
--- XXX: Iterate over sound to lower the volume based on the
--- XXX: the scale of the flame.
-
--- Reduce for the normal spreading flames.
-picture_opts = util.table.deepcopy (picture_opts)
-picture_opts.scale = 0.75
-
-local flame_1 = util.table.deepcopy (flame_0)
-flame_1.name = "creeper-flame-1"
-flame_1.initial_lifetime = 480
-flame_1.delay_between_initial_flames = 240
-flame_1.light.intensity = 1 * picture_opts.scale -- default: 1
-flame_1.light.size = 20 * picture_opts.scale  -- default: 20
-flame_1.pictures = fireutil.create_fire_pictures (picture_opts)
-fireutil.update_lifetimes (flame_1)
-
-picture_opts = util.table.deepcopy (picture_opts)
-picture_opts.scale = 0.5
-
-local flame_2 = util.table.deepcopy (flame_1)
-flame_2.name = "creeper-flame-2"
-flame_2.initial_lifetime = 960
-flame_2.delay_between_initial_flames = 480
-flame_2.light.intensity = 1 * picture_opts.scale
-flame_2.light.size = 20 * picture_opts.scale
-fireutil.update_lifetimes (flame_2)
-
-picture_opts = util.table.deepcopy (picture_opts)
-picture_opts.scale = 0.25
-
-local flame_3 = util.table.deepcopy (flame_2)
-flame_3.name = "creeper-flame-3"
-flame_3.initial_lifetime = 1920
-flame_3.delay_between_initial_flames = 960
-flame_2.light.intensity = 1 * picture_opts.scale
-flame_2.light.size = 20 * picture_opts.scale
-fireutil.update_lifetimes (flame_3)
-
-
-data:extend ({ flame_0, flame_1, flame_2, flame_3})
+data:extend ({ flame_1, flame_2, flame_3, flame_4, landfill })

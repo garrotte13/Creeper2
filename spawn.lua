@@ -390,17 +390,6 @@ local on_player_used_capsule = function (event)
 end
 
 
-local on_runtime_settings = function (event)
-    if event.setting_type == "runtime-global" then
-        if event.setting == "creep-biter-death" then
-            creep_chance_on_death = settings.global[event.setting].value
-        elseif event.setting == "creep-growth" then
-            creep_growth = settings.global[event.setting].value
-        end
-    end
-end
-
-
 local on_creep_nth_tick = function (event)
     --[[--
      The creep states are:
@@ -487,6 +476,16 @@ local on_creep_nth_tick = function (event)
 end
 
 
+local on_runtime_settings = function (event)
+    if event.setting_type == "runtime-global" then
+        if event.setting == "creep-biter-death" then
+            creep_chance_on_death = settings.global[event.setting].value
+        elseif event.setting == "creep-growth" then
+            creep_growth = settings.global[event.setting].value
+        end
+    end
+end
+
 
 local lib = {}
 
@@ -508,12 +507,15 @@ lib.on_nth_tick = {
 }
 
 
+local cache_settings = function()
+    creep_chance_on_death = settings.global["creep-biter-death"].value
+    creep_growth = settings.global["creep-growth-1_0_2"].value
+end
+
 -- Called on new game.
 -- Called when added to exiting game.
 lib.on_init = function()
-    -- Cache the settings.
-    creep_chance_on_death = settings.global["creep-biter-death"].value
-    creep_growth = settings.global["creep-growth-1_0_2"].value
+    cache_settings()
 
     -- The Krastorio virus has been released on this surface.
     global.surface_viruses = {}
@@ -530,10 +532,7 @@ end
 -- Not called when added to existing game.
 -- Called when loaded after saved in existing game.
 lib.on_load = function()
-    -- Cache the settings.
-    creep_chance_on_death = settings.global["creep-biter-death"].value
-    creep_growth = settings.global["creep-growth-1_0_2"].value
-
+    cache_settings()
     util.update_event_filters (lib.event_filters)
 end
 

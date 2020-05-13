@@ -1,6 +1,7 @@
 local util = require "util"
 
---[[ Generic utility functiond ]]--
+
+--[[ Generic utility functions ]]--
 
 util.compare_key_value_table = function (t1, t2)
     if table_size (t1) ~= table_size (t2) then return false end
@@ -15,6 +16,16 @@ util.crash = function (...)
     print (...)
     __crash()
 end
+
+
+util.insert_keyed_table = function (tbl, key, value)
+    if tbl[key] == nil then
+        tbl[key] = { value }
+    else
+        table.insert (tbl[key], value)
+    end
+end
+
 
 
 util.update_event_filters = function (event_filters)
@@ -95,6 +106,14 @@ util.filter_surface = function (surface, no_virus_check)
     end
 
     return surface
+end
+
+
+util.position_key = function (entity)
+    -- REQUIRES: valid entity
+    return entity.surface.index .. ":"
+            .. entity.position.x .. ":"
+            .. entity.position.y
 end
 
 

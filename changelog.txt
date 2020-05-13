@@ -1,8 +1,19 @@
 ---------------------------------------------------------------------------------------------------
-Version: 1.1.0
-Date: 2020.05.15
-  Features:
-    - Flames burn creep, but releases stored pollution
+Version: 1.0.3
+Date: 2020.05.12
+  Beta:
+    - Purge the creep by fire, setting huge swaths of it aflame. With
+      the release, it brings two new settings--enable creep burnination
+      and wildfire mode. Additionally, the biomass of the creep alters
+      the flames' hue.
+    - This is a BETA feature. It's performant ("It works for me!"),
+      even with the wildfire setting enabled. Currently, flame spreads
+      only if initiated by the personal flamethrower or a flame turret.
+      Other sources of flames (burning trees, tank flamethrower, atomic
+      bombs) do not start blazes. Future releases will handle these
+      events, along with the anti-matter bomb wiping out creep patches.
+      Be warned that creep blazes will spread to structures and trees.
+    - Feedback requested if you observe performance issues or other bugs.
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.2
 Date: 2020.05.11
