@@ -3,10 +3,11 @@
 -- TODO:   Will probably need to modify prototype to create_entity
 
 -- TODO: See about nuclear bombs and other "fire" sources lighting
--- TODO    creep on fire. Or maybe just remove creep in its path.
+-- TODO:   creep on fire. Or maybe just remove creep in its path.
 
--- TODO: Test tank flamethrower
+-- TODO: Start a slow re-growth of grasses where the creep burned
 
+-- TODO: Auto-target creep with flame turrets
 
 local util = require "utils"
 

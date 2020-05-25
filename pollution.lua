@@ -64,7 +64,7 @@ end
 
 
 local queue_deferrals = function (event)
-    -- Chances are there's creep near where this event happend.
+    -- Chances are there's creep near where this event happened.
 
     local entity = event.entity
     if entity.valid then
@@ -222,7 +222,7 @@ local on_evo_nth_tick = function (event)
         -- Based on the creep evolution factor setting (scaled down from
         -- human form), calculate how much evolution factor from creep.
         -- Before applied to the base of 1 - evo.
-        local evo_c_pollution = evo_factor / 100000 * pollution
+        local evo_c_pollution = evo_factor / 90000 * pollution
 
         -- Only updating the enemy as they are the ones with creep.
         local f = game.forces.enemy

@@ -9,10 +9,18 @@ data:extend ({
         order = "a"
     },
     {
+        type = "int-setting",
+        name = "creep-tile-immunity",
+        setting_type = "runtime-global",
+        default_value = 140,
+        minimum_value = 0,
+        order = "ai"
+    },
+    {
         type = "double-setting",
         name = "creep-biter-death",
         setting_type = "runtime-global",
-        default_value = 0.1,
+        default_value = 0.05,
         minimum_value = 0,
         maximum_value = 1.0,
         order = "am"

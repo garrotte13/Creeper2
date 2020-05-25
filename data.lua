@@ -249,7 +249,7 @@ function fireutil.make_flame (name, scale)
   -- the flames and its smoke can be extended for long periods, almost like
   -- little brush fires are re-igniting. We divide by the scale
   -- because bigger flames burn faster.
-  flame.damage_per_tick.amount = 45 * picture_opts.scale / 60  -- default: 13/60
+  flame.damage_per_tick.amount = 40 * picture_opts.scale / 60  -- default: 13/60
   flame.emissions_per_second = 0.018 * picture_opts.scale  -- default: 0.005
   flame.initial_lifetime = 240 / picture_opts.scale  -- default: 120
   flame.delay_between_initial_flames = 480 / picture_opts.scale -- default: 10

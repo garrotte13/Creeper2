@@ -1,4 +1,18 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.4
+Date: 2020.05.25
+  Features:
+    - Allow tile immunity controlled by the walking speed modifier. By default,
+      concrete (140%) and higher are immune to creep.
+  Changes:
+    - Pollution from creep slightly increased;
+    - Creep chance on biter death reduced (default: 0.1 -> 0.05), but old
+      users (of the mod, not age) will need to manually update the value.
+  Beta:
+    - Fire damage from burning creep slightly reduced.
+  Thanks:
+    - MarcusTral for the tile immunity suggestion
+---------------------------------------------------------------------------------------------------
 Version: 1.0.3
 Date: 2020.05.12
   Beta:

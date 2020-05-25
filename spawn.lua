@@ -12,6 +12,7 @@ local TILES_PER_INTERVAL = 16
 -- Cached setting values.
 local creep_chance_on_death = 0
 local creep_growth = 0
+local creep_tile_immunity = 0
 
 
 -- Local binds.
@@ -51,6 +52,13 @@ local creep_iterative_search = function (creep)
         if not tile then
             -- Abort the iterative search.
             position = nil
+        elseif tile.prototype.walking_speed_modifier >= creep_tile_immunity then
+            -- Abort here to prevent spending time searching a
+            -- huge swath of immune tiles (similar to lakes and
+            -- ribbon world edges). It has the plus (or maybe it's a
+            -- minus) that creep won't jump immune tiles, encouraging
+            -- the "abuse" of the mechanic.
+            position = nil
         elseif tile.name ~= "kr-creep" then
             creep_position = tile.position
         end
@@ -81,7 +89,7 @@ local creep_search_position = function (surface, position)
     local creeps_len = table_size (creeps)
 
     if creeps_len == 0 then
-        -- This is a special case where Krastorio didn't spawn
+        -- This is a special case where Krastorio/Rampant didn't spawn
         -- creep under the spawner, or it's burned away and the
         -- spawner didn't die.
         local tile = filter_tile (surface.get_tile (position))
@@ -139,7 +147,10 @@ local spawn_creep = function (surface, position, creeps)
                 local pt_key = pos.x .. ":" .. pos.y
                 if not tiles[pt_key] then
                     local tile = filter_tile (surface_get_tile (pos))
-                    if tile and tile.name ~= "kr-creep" then
+                    if tile
+                            and tile.name ~= "kr-creep"
+                            and tile.prototype.walking_speed_modifier < creep_tile_immunity
+                    then
                         tiles[pt_key] = {
                             name = "kr-creep",
                             position = tile.position
@@ -360,7 +371,10 @@ local on_entity_died = function (event)
         if filter_surface (surface) then
             local position = entity.position
             local tile = filter_tile (surface.get_tile (position))
-            if tile and tile.name ~= "kr-creep" then
+            if tile
+                    and tile.name ~= "kr-creep"
+                    and tile.prototype.walking_speed_modifier < creep_tile_immunity
+            then
                 surface.set_tiles ({{ name = "kr-creep", position = position }})
             end
         end
@@ -510,6 +524,7 @@ lib.on_nth_tick = {
 local cache_settings = function()
     creep_chance_on_death = settings.global["creep-biter-death"].value
     creep_growth = settings.global["creep-growth-1_0_2"].value
+    creep_tile_immunity = settings.global["creep-tile-immunity"].value / 100.0
 end
 
 -- Called on new game.
