@@ -1,5 +1,7 @@
-A fork from Creeper: https://mods.factorio.com/mod/creeper originally made by Chris Richards. Copyright 2020 Chris Richards https://bitbucket.org/doktorstick/creeper/src/master/
-Adopted to Factorio1.1 Warmonger mod to allow creep corrode player's buildings. Nothing else changed and no plans so far.
+A fork from Creeper: https://mods.factorio.com/mod/creeper originally made by Chris Richards.
+Copyright 2020 Chris Richards https://bitbucket.org/doktorstick/creeper/src/master/
+
+Adopted to Factorio1.1 and Warmonger mod to allow creep corrode player's buildings. Nothing else changed and no plans so far.
 
 *Creeper2* creeps on [Warmonger](https://mods.factorio.com/mod/Warmonger) by letting the creep creep. Pollution drives the creeping, but only via the spawner connected to it. The more active the spawner, the more active the creep; [Rampant](https://mods.factorio.com/mod/Rampant) death worlds beware! Creep without a spawner feeding it lay dorment, and those that are creeping, creep mostly toward heavier polluted sectors.
 
