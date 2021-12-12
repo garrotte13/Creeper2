@@ -3,8 +3,8 @@
   "title": "Creeper2",
   "version": "1.1.0",
   "factorio_version": "1.1",
-  "author": "doktorstick",
-  "homepage": "https://bitbucket.org/doktorstick/creeper",
-  "description": "Creepers gonna creep. Now with more burnination.",
+  "author": "doktorstick, garrotte",
+  "homepage": "https://github.com/garrotte13/Creeper2",
+  "description": "Creepers gonna creep, with more burnination. Now with corrosion.",
   "dependencies": ["base >= 1.1.41", "! Krastorio2 >= 0.9.11", "Warmonger >= 1.2.0", "! Creeper >= 1.0.0"]
 }
