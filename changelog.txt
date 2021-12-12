@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.0
+Date: 2021-12-12
+  Changes:
+    - Creep type-2 generation via special new creep API method. Therefore requires Warmonger.
+    - Disabled surface virus check.
+---------------------------------------------------------------------------------------------------
 Version: 1.0.4
 Date: 2020.05.25
   Features:

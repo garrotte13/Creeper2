@@ -98,12 +98,12 @@ end
 util.filter_surface = function (surface, no_virus_check)
     if not surface then return nil end
     if not surface.valid then return nil end
-    if not no_virus_check
-            and global.surface_viruses
-            and global.surface_viruses[surface.index]
-    then
-        return nil
-    end
+    --if not no_virus_check
+     --       and global.surface_viruses
+     --       and global.surface_viruses[surface.index]
+    --then
+      --  return nil
+    --end
 
     return surface
 end

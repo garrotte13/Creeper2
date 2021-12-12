@@ -79,7 +79,7 @@ local on_trigger_created_entity = function (event)
 
     local surface = flame.surface
     local tile = filter_tile (surface.get_tile (flame.position))
-    if tile and tile.name == "kr-creep" then
+    if tile and (tile.name == "kr-creep" or tile.name == "fk-creep") then
         surface.set_tiles ({
             { name = CREEPER_TILE, position = tile.position }
         })
@@ -134,7 +134,7 @@ local spread_flame = function (tick, flame_info, flame_count)
     local surface_create_entity = surface.create_entity
 
     local surrounding_creep = surface.find_tiles_filtered {
-        name = "kr-creep",
+        name = {"kr-creep", "fk-creep"},
         position = flame_info.flame.position,
         radius = 2.5
     }

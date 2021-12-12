@@ -59,7 +59,7 @@ local creep_iterative_search = function (creep)
             -- minus) that creep won't jump immune tiles, encouraging
             -- the "abuse" of the mechanic.
             position = nil
-        elseif tile.name ~= "kr-creep" then
+        elseif (tile.name ~= "kr-creep") and (tile.name ~= "fk-creep") then
             creep_position = tile.position
         end
 
@@ -84,7 +84,7 @@ local creep_search_position = function (surface, position)
     local creeps = surface.find_tiles_filtered {
         position = position,
         radius = CREEP_SEARCH_RADIUS,
-        name = "kr-creep",
+        name = {"kr-creep", "fk-creep"}
     }
     local creeps_len = table_size (creeps)
 
@@ -93,7 +93,7 @@ local creep_search_position = function (surface, position)
         -- creep under the spawner, or it's burned away and the
         -- spawner didn't die.
         local tile = filter_tile (surface.get_tile (position))
-        if tile.name == "kr-creep" then
+        if tile.name == "kr-creep" or tile.name == "fk-creep" then
             -- We started on creep but couldn't find anything.
             return nil
         end
@@ -148,11 +148,11 @@ local spawn_creep = function (surface, position, creeps)
                 if not tiles[pt_key] then
                     local tile = filter_tile (surface_get_tile (pos))
                     if tile
-                            and tile.name ~= "kr-creep"
+                            and (tile.name ~= "kr-creep" and tile.name ~= "fk-creep")
                             and tile.prototype.walking_speed_modifier < creep_tile_immunity
                     then
                         tiles[pt_key] = {
-                            name = "kr-creep",
+                            name = "fk-creep",
                             position = tile.position
                         }
 
@@ -183,7 +183,8 @@ local spawn_creep = function (surface, position, creeps)
         spawned = spawned + 1
     end
 
-    surface.set_tiles (creep_tiles)
+    --surface.set_tiles (creep_tiles)
+    remote.call("kr-creep", "spawn_creep_tiles", surface, creep_tiles)
 
     -- If we were able to find space for some, then requeue the leftovers
     -- so it tries again.
@@ -372,10 +373,12 @@ local on_entity_died = function (event)
             local position = entity.position
             local tile = filter_tile (surface.get_tile (position))
             if tile
-                    and tile.name ~= "kr-creep"
+                    and tile.name ~= "kr-creep" and tile.name ~= "fk-creep"
                     and tile.prototype.walking_speed_modifier < creep_tile_immunity
             then
-                surface.set_tiles ({{ name = "kr-creep", position = position }})
+                --surface.set_tiles ({{ name = "fk-creep", position = position }})
+
+                remote.call("kr-creep", "spawn_creep_tiles", surface, {{ name = "fk-creep", position = position }})
             end
         end
     end
@@ -389,19 +392,19 @@ local on_entity_spawned = function (event)
 end
 
 
-local on_player_used_capsule = function (event)
-    if event.item and event.item.name == "kr-creep-virus" then
-        local player = game.players[event.player_index]
-        if player
-                and player.valid
-                and player.character
-                and player.character.valid
-        then
-            local surface = player.character.surface
-            global.surface_viruses[surface.index] = true
-        end
-    end
-end
+--local on_player_used_capsule = function (event)
+--    if event.item and event.item.name == "kr-creep-virus" then
+        --local player = game.players[event.player_index]
+        --if player
+          --      and player.valid
+          --      and player.character
+                --and player.character.valid
+        --then
+          --  local surface = player.character.surface
+            --global.surface_viruses[surface.index] = true
+        --end
+    --end
+--end
 
 
 local on_creep_nth_tick = function (event)
@@ -533,7 +536,7 @@ lib.on_init = function()
     cache_settings()
 
     -- The Krastorio virus has been released on this surface.
-    global.surface_viruses = {}
+--    global.surface_viruses = {}
 
     -- Indexed by spawner as each has it's own direction
     -- and creep count to track.

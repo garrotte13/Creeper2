@@ -108,7 +108,7 @@ local on_remove_tile = function (event)
     if not surface then return end
 
     for _, tile in pairs (event.tiles) do
-        if tile.old_tile.name == "kr-creep" then
+        if tile.old_tile.name == "kr-creep" or tile.old_tile.name == "fk-creep" then
             -- For evolution calculation.
             defer_chunk {surface, tile.position}
         end
@@ -130,7 +130,7 @@ local on_deferred_nth_tick = function (event)
                 -- We need to interrogate this chunk and add it to
                 -- the list of chunks to be monitored.
                 local creep = surface.count_tiles_filtered {
-                    name="kr-creep",
+                    name={"kr-creep","fk-creep"},
                     area=chunk.chunk_position.area
                 }
 
